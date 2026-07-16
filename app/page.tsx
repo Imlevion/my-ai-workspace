@@ -2,31 +2,53 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowUp, Key, ArrowRight, Sparkles, Command, MessageSquarePlus } from 'lucide-react';
+import {
+  ArrowUp, Key, Sparkles, Code2, PanelRightClose, PanelRight,
+  SlidersHorizontal, Bot, User, Copy, Check, Terminal,
+  Cpu, Zap, RefreshCw, Layers
+} from 'lucide-react';
 
 interface Message {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
+  codeSnippet?: string;
+  timestamp: string;
 }
 
 export default function Home() {
+  // Config States
   const [apiKey, setApiKey] = useState('');
+  const [selectedModel, setSelectedModel] = useState('llama-3.3-70b-versatile');
+  const [temperature, setTemperature] = useState(0.7);
+  const [systemPrompt, setSystemPrompt] = useState('You are an elite AI system designed with precision.');
+  
+  // UI Controls
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showApiModal, setShowApiModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [activeArtifact, setActiveArtifact] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const handleSend = async (customPrompt?: string) => {
-    const textToSend = customPrompt || input;
+  // Extract code block if AI response contains markdown code
+  const processAIResponse = (text: string) => {
+    const codeBlockMatch = text.match(/```(?:\w+)?\n([\s\S]*?)```/);
+    return {
+      cleanText: text,
+      code: codeBlockMatch ? codeBlockMatch[1] : undefined
+    };
+  };
+
+  const handleSend = async (overridePrompt?: string) => {
+    const textToSend = overridePrompt || input;
     if (!textToSend.trim() || isLoading) return;
 
     if (!apiKey) {
@@ -34,209 +56,303 @@ export default function Home() {
       return;
     }
 
-    const newMessages: Message[] = [...messages, { role: 'user', content: textToSend }];
-    setMessages(newMessages);
-    if (!customPrompt) setInput('');
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: textToSend,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
+    if (!overridePrompt) setInput('');
     setIsLoading(true);
 
     try {
+      // Format messages with system prompt
+      const payloadMessages = [
+        { role: 'system', content: systemPrompt },
+        ...updatedMessages.map(m => ({ role: m.role, content: m.content }))
+      ];
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, apiKey }),
+        body: JSON.stringify({ messages: payloadMessages, apiKey }),
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request error');
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Terjadi kesalahan');
-      }
+      const { cleanText, code } = processAIResponse(data.message);
 
-      setMessages([...newMessages, { role: 'assistant', content: data.message }]);
+      const aiMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: cleanText,
+        codeSnippet: code,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setMessages([...updatedMessages, aiMsg]);
+      if (code) setActiveArtifact(code);
     } catch (err: any) {
       setMessages([
-        ...newMessages,
-        { role: 'assistant', content: `[System Error]: ${err.message}` },
+        ...updatedMessages,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `⚠️ Error: ${err.message}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
       ]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const resetChat = () => {
-    setMessages([]);
-    setInput('');
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
   };
 
   return (
-    <div className="flex h-screen bg-[#09090b] text-[#f4f4f5] font-sans overflow-hidden antialiased selection:bg-zinc-800 selection:text-zinc-100">
+    <div className="flex h-screen bg-[#070709] text-[#e4e4e7] font-sans overflow-hidden antialiased selection:bg-amber-500/20 selection:text-amber-200">
       
-      {/* SIDEBAR - Apple Floating Glass Panel */}
-      <aside className="w-72 border-r border-zinc-800/60 bg-[#09090b]/80 backdrop-blur-xl p-5 flex flex-col justify-between hidden md:flex">
-        <div className="space-y-6">
-          {/* Brand Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-zinc-800/60">
-            <div className="flex items-center gap-2.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-zinc-100 animate-pulse" />
-              <span className="font-medium text-sm tracking-tight text-zinc-200">AURA AI</span>
+      {/* LEFT CANVAS: COMMAND & CHAT THREAD */}
+      <div className="flex-1 flex flex-col h-full relative border-r border-zinc-800/40">
+        
+        {/* Awwwards Dynamic Header */}
+        <header className="h-16 border-b border-zinc-800/40 px-6 flex items-center justify-between bg-[#070709]/80 backdrop-blur-md z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/20 to-zinc-800 border border-amber-500/30 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-amber-400" />
             </div>
-            <button 
-              onClick={resetChat}
-              className="p-1.5 rounded-lg hover:bg-zinc-800/60 text-zinc-400 hover:text-zinc-200 transition-colors"
-              title="New Chat"
+            <div>
+              <h1 className="text-sm font-medium tracking-tight text-zinc-100 flex items-center gap-2">
+                AURA <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400">Pro Studio</span>
+              </h1>
+            </div>
+          </div>
+
+          {/* Controls Dock Header */}
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="bg-zinc-900/80 border border-zinc-800 text-xs text-zinc-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500/50 transition-colors cursor-pointer font-mono"
             >
-              <MessageSquarePlus className="w-4 h-4" />
+              <option value="llama-3.3-70b-versatile">llama-3.3-70b</option>
+              <option value="llama-3.1-8b-instant">llama-3.1-8b (Ultra Fast)</option>
+              <option value="mixtral-8x7b-32768">mixtral-8x7b</option>
+            </select>
+
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className={`p-2 rounded-lg border text-xs transition-all ${
+                showSettings 
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-400' 
+                  : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => setShowApiModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800 text-xs text-zinc-300 transition-all flex items-center gap-1.5"
+            >
+              <Key className="w-3.5 h-3.5 text-amber-400" />
+              <span>{apiKey ? 'Key Saved' : 'Set Key'}</span>
             </button>
           </div>
+        </header>
 
-          {/* Quick Stats / Status */}
-          <div className="space-y-1">
-            <span className="text-[10px] font-mono tracking-wider uppercase text-zinc-500 font-semibold px-1">
-              Engine Status
-            </span>
-            <div className="p-3 rounded-xl bg-zinc-900/50 border border-zinc-800/50 text-xs text-zinc-400 flex items-center justify-between">
-              <span>Model</span>
-              <span className="font-mono text-[11px] text-zinc-200 bg-zinc-800 px-2 py-0.5 rounded-md">LLaMA 3.3 70B</span>
+        {/* SYSTEM PROMPT & TUNING DRAWER */}
+        <AnimatePresence>
+          {showSettings && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-zinc-900/40 border-b border-zinc-800/60 p-4 px-6 space-y-3 backdrop-blur-xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
+                <span className="flex items-center gap-1.5"><Bot className="w-3.5 h-3.5 text-amber-400"/> System Persona</span>
+                <span>Temp: {temperature}</span>
+              </div>
+              <input
+                type="text"
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500/50"
+              />
+              <div className="flex items-center gap-4">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={temperature}
+                  onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                  className="w-full accent-amber-500 bg-zinc-800 h-1 rounded-lg cursor-pointer"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* MESSAGES THREAD */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center max-w-md mx-auto text-center space-y-6">
+              <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-400 shadow-2xl shadow-amber-500/10">
+                <Layers className="w-6 h-6" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-xl font-normal text-zinc-100 tracking-tight">Next-Gen Workspace</h2>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Dual-panel intelligence engine. Codes, artifacts, and outputs automatically render in the workspace inspector.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-2 w-full text-left">
+                {[
+                  "Write a React component for modern glassmorphism UI",
+                  "Design an algorithm for async task queue with priority",
+                  "Draft a system architecture summary"
+                ].map((prompt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSend(prompt)}
+                    className="p-3 text-xs rounded-xl bg-zinc-900/30 hover:bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all flex items-center justify-between group"
+                  >
+                    <span>{prompt}</span>
+                    <ArrowUp className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-amber-400 rotate-45" />
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        </div>
-
-        {/* Bottom Settings */}
-        <div className="pt-4 border-t border-zinc-800/60">
-          <button
-            onClick={() => setShowApiModal(true)}
-            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-zinc-900/40 hover:bg-zinc-800/60 border border-zinc-800/40 transition-all text-xs text-zinc-300"
-          >
-            <div className="flex items-center gap-2">
-              <Key className="w-3.5 h-3.5 text-zinc-400" />
-              <span>API Key</span>
-            </div>
-            <span className="font-mono text-[10px] text-zinc-500">
-              {apiKey ? '•••' + apiKey.slice(-4) : 'Not Set'}
-            </span>
-          </button>
-        </div>
-      </aside>
-
-      {/* MAIN CANVAS */}
-      <main className="flex-1 flex flex-col relative bg-[#09090b]">
-        
-        {/* CHAT VIEW / HERO */}
-        <div className="flex-1 overflow-y-auto px-4 py-8 md:px-12 flex flex-col items-center">
-          <div className="w-full max-w-2xl flex-1 flex flex-col">
-            
-            {messages.length === 0 ? (
-              /* Awwwards Minimal Hero */
-              <motion.div 
-                initial={{ opacity: 0, y: 15 }}
+          ) : (
+            messages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                className="my-auto py-12 space-y-8"
+                className="space-y-2 max-w-2xl"
               >
-                <div className="space-y-3">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 font-medium">
-                    <Sparkles className="w-3 h-3 text-zinc-200" />
-                    <span>Awwwards-grade Intelligence</span>
-                  </div>
-                  <h1 className="text-3xl md:text-5xl font-normal tracking-tight text-zinc-100 leading-[1.15]">
-                    Thought rendered <br />
-                    <span className="text-zinc-500">into code & execution.</span>
-                  </h1>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500">
+                  {msg.role === 'user' ? (
+                    <User className="w-3 h-3 text-zinc-400" />
+                  ) : (
+                    <Bot className="w-3 h-3 text-amber-400" />
+                  )}
+                  <span className="uppercase">{msg.role}</span>
+                  <span>•</span>
+                  <span>{msg.timestamp}</span>
                 </div>
 
-                {/* Apple Style Preset Cards */}
-                <div className="grid grid-cols-1 gap-2.5 pt-4">
-                  {[
-                    { title: "Refactor Architecture", desc: "Clean code & modular design patterns" },
-                    { title: "Debug Complex Issues", desc: "Isolate bugs with root-cause analysis" },
-                    { title: "Draft React Components", desc: "Modern UI built with Tailwind & TypeScript" },
-                  ].map((preset, idx) => (
+                <div className={`text-sm leading-relaxed whitespace-pre-wrap p-4 rounded-2xl border ${
+                  msg.role === 'user' 
+                    ? 'bg-zinc-900/60 border-zinc-800/80 text-zinc-200' 
+                    : 'bg-zinc-950/40 border-zinc-800/40 text-zinc-100'
+                }`}>
+                  {msg.content}
+
+                  {msg.codeSnippet && (
                     <button
-                      key={idx}
-                      onClick={() => handleSend(`${preset.title}: ${preset.desc}`)}
-                      className="group flex items-center justify-between p-4 rounded-2xl bg-zinc-900/30 hover:bg-zinc-900/80 border border-zinc-800/40 hover:border-zinc-700/60 transition-all text-left"
+                      onClick={() => setActiveArtifact(msg.codeSnippet || null)}
+                      className="mt-3 flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3 py-1.5 rounded-lg transition-all"
                     >
-                      <div>
-                        <p className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors">{preset.title}</p>
-                        <p className="text-xs text-zinc-500 mt-0.5">{preset.desc}</p>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-zinc-600 group-hover:text-zinc-200 group-hover:translate-x-1 transition-all" />
+                      <Code2 className="w-3.5 h-3.5" />
+                      <span>Inspect Code Artifact</span>
                     </button>
-                  ))}
+                  )}
                 </div>
               </motion.div>
-            ) : (
-              /* Message Stream */
-              <div className="space-y-6 pb-36 pt-4">
-                {messages.map((msg, idx) => (
-                  <motion.div
-                    key={idx}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="space-y-1.5"
-                  >
-                    <div className="text-[11px] font-mono text-zinc-500 tracking-wider uppercase">
-                      {msg.role === 'user' ? 'You' : 'Aura'}
-                    </div>
-                    <div className={`text-sm leading-relaxed whitespace-pre-wrap ${
-                      msg.role === 'user' ? 'text-zinc-300 bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800/50' : 'text-zinc-100 pl-1'
-                    }`}>
-                      {msg.content}
-                    </div>
-                  </motion.div>
-                ))}
+            ))
+          )}
 
-                {isLoading && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-1.5">
-                    <div className="text-[11px] font-mono text-zinc-500 tracking-wider uppercase">Aura</div>
-                    <div className="text-sm text-zinc-500 animate-pulse flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-ping" />
-                      Computing response...
-                    </div>
-                  </motion.div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-            )}
-
-          </div>
+          {isLoading && (
+            <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono animate-pulse">
+              <Cpu className="w-4 h-4 text-amber-400 animate-spin" />
+              <span>Engine thinking...</span>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
-        {/* INPUT DOCK - Floating Apple Capsule */}
-        <div className="absolute bottom-6 left-0 right-0 px-4 flex justify-center pointer-events-none">
-          <div className="w-full max-w-2xl pointer-events-auto">
-            <div className="relative flex items-center bg-[#121215]/90 backdrop-blur-2xl border border-zinc-800/80 rounded-2xl p-2 shadow-2xl shadow-black/80 focus-within:border-zinc-600 transition-all">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Ask or command anything..."
-                rows={1}
-                className="w-full bg-transparent px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none resize-none max-h-32"
-              />
+        {/* FLOATING FLOATING COMMAND DOCK */}
+        <div className="p-4 bg-[#070709]">
+          <div className="max-w-2xl mx-auto relative flex items-center bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-2 shadow-2xl focus-within:border-zinc-700 transition-all">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Command AI or ask code architecture..."
+              rows={1}
+              className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none resize-none max-h-32"
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim() || isLoading}
+              className="p-2.5 rounded-xl bg-amber-500 text-zinc-950 hover:bg-amber-400 disabled:opacity-20 transition-all"
+            >
+              <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* RIGHT CANVAS: LIVE ARTIFACT / CODE INSPECTOR */}
+      {activeArtifact && (
+        <motion.div
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: '45%', opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          className="h-full bg-zinc-950 border-l border-zinc-800/60 flex flex-col hidden lg:flex"
+        >
+          {/* Artifact Header */}
+          <div className="h-16 border-b border-zinc-800/60 px-4 flex items-center justify-between bg-zinc-950/80">
+            <div className="flex items-center gap-2 text-xs font-mono text-zinc-300">
+              <Terminal className="w-4 h-4 text-amber-400" />
+              <span>Artifact Inspector</span>
+            </div>
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => handleSend()}
-                disabled={!input.trim() || isLoading}
-                className="p-2.5 rounded-xl bg-zinc-100 text-zinc-950 hover:bg-white disabled:opacity-30 disabled:hover:bg-zinc-100 transition-all"
+                onClick={() => copyToClipboard(activeArtifact)}
+                className="p-1.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-900 rounded-lg border border-zinc-800 flex items-center gap-1"
               >
-                <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+                {isCopied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{isCopied ? 'Copied' : 'Copy'}</span>
+              </button>
+              <button
+                onClick={() => setActiveArtifact(null)}
+                className="p-1.5 text-zinc-500 hover:text-zinc-200 rounded-lg hover:bg-zinc-900"
+              >
+                <PanelRightClose className="w-4 h-4" />
               </button>
             </div>
           </div>
-        </div>
 
-      </main>
+          {/* Artifact Code Workspace */}
+          <div className="flex-1 overflow-auto p-4 font-mono text-xs text-amber-200/90 bg-[#040406]">
+            <pre className="whitespace-pre-wrap leading-relaxed">
+              <code>{activeArtifact}</code>
+            </pre>
+          </div>
+        </motion.div>
+      )}
 
       {/* API KEY MODAL */}
       <AnimatePresence>
         {showApiModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -244,8 +360,10 @@ export default function Home() {
               className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-2xl"
             >
               <div className="space-y-1">
-                <h3 className="text-base font-medium text-zinc-100">Groq API Key Required</h3>
-                <p className="text-xs text-zinc-400">Masukkan API key kamu untuk mengaktifkan AI engine.</p>
+                <h3 className="text-sm font-medium text-zinc-100 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-400" /> Enter Groq API Key
+                </h3>
+                <p className="text-xs text-zinc-400">Key disimpan lokal di session browser kamu.</p>
               </div>
 
               <input
@@ -253,17 +371,15 @@ export default function Home() {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="gsk_..."
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-zinc-600"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-amber-500/50"
               />
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowApiModal(false)}
-                  className="w-full py-2 rounded-xl bg-zinc-100 text-zinc-950 text-xs font-medium hover:bg-white transition-colors"
-                >
-                  Save & Continue
-                </button>
-              </div>
+              <button
+                onClick={() => setShowApiModal(false)}
+                className="w-full py-2.5 rounded-xl bg-amber-500 text-zinc-950 text-xs font-medium hover:bg-amber-400 transition-colors"
+              >
+                Save & Continue
+              </button>
             </motion.div>
           </div>
         )}
