@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  passwordHash  String
+  apiKey        String   @default("")
+  model         String   @default("llama-3.3-70b-versatile")
+  theme         String   @default("dark")
+  temperature   Float    @default(0.7)
+  maxTokens     Int      @default(4096)
+  systemPrompt  String   @default("You are Aura, a precise and elegant AI assistant. Be clear, structured, and useful. When writing code, use fenced markdown blocks with a language tag.")
+  sendWithEnter Boolean  @default(true)
+  showCanvas    Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  chats         Chat[]
+}
+
+model Chat {
+  id        String    @id @default(cuid())
+  title     String    @default("New chat")
+  pinned    Boolean   @default(false)
+  mode      String    @default("auto")
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+
+  @@index([userId, updatedAt])
+  @@index([userId, pinned])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([chatId, createdAt])
+}
