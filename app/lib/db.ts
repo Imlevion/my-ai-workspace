@@ -10,30 +10,51 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  * Resolve DATABASE_URL the same way Prisma CLI does for SQLite.
  * file:./dev.db  → <projectRoot>/dev.db
  * file:/tmp/dev.db → /tmp/dev.db
- * In production, copy the built root DB to a writable /tmp path.
+ * In production or sandboxed/read-only cloud environments, copy the built root DB to a writable /tmp path.
  */
 function resolveDbPath() {
-  if (process.env.DATABASE_URL) {
-    if (process.env.DATABASE_URL === ":memory:") return ":memory:";
-    let raw = process.env.DATABASE_URL.replace(/^file:/, "");
-    if (raw.startsWith("./")) raw = raw.slice(2);
-    if (path.isAbsolute(raw)) return raw;
-    return path.resolve(process.cwd(), raw);
-  }
+  const dbUrl = process.env.DATABASE_URL || "file:./dev.db";
+  
+  if (dbUrl === ":memory:") return ":memory:";
+  
+  let raw = dbUrl.replace(/^file:/, "");
+  if (raw.startsWith("./")) raw = raw.slice(2);
+  
+  const source = path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
 
-  // Default path is "dev.db" relative to project root
-  const source = path.resolve(process.cwd(), "dev.db");
+  // Check if we are running in a restricted/cloud environment (like Vercel or Google AI Studio)
+  // where the project root is read-only or not meant for persistent SQLite writes.
+  const isCloud =
+    process.env.NODE_ENV === "production" ||
+    !!process.env.VERCEL ||
+    !!process.env.AI_STUDIO ||
+    (() => {
+      try {
+        const testFile = path.join(process.cwd(), ".write-test-" + Math.random());
+        fs.writeFileSync(testFile, "test");
+        fs.unlinkSync(testFile);
+        return false; // writable local environment
+      } catch {
+        return true; // read-only/sandboxed environment
+      }
+    })();
 
-  if (process.env.NODE_ENV === "production") {
-    const target = path.join(os.tmpdir(), "dev.db");
+  if (isCloud) {
+    const target = path.join(os.tmpdir(), path.basename(source));
     try {
-      // Always try to copy the latest build-time database to /tmp if not already present
-      if (!fs.existsSync(target) && fs.existsSync(source)) {
-        fs.copyFileSync(source, target);
-        console.log(`Successfully copied database from ${source} to ${target}`);
+      // Always ensure the target exists and copy the base db if needed
+      if (!fs.existsSync(target)) {
+        if (fs.existsSync(source)) {
+          fs.copyFileSync(source, target);
+          console.log(`Successfully copied database from ${source} to ${target}`);
+        } else {
+          // If source doesn't exist, create an empty file so Prisma can use it
+          fs.writeFileSync(target, "");
+          console.log(`Created empty database at ${target}`);
+        }
       }
     } catch (err) {
-      console.error("Failed to copy database:", err);
+      console.error("Failed to setup cloud database path:", err);
     }
     return target;
   }
