@@ -70,6 +70,9 @@ import {
   Paintbrush,
   Mic,
   Table2,
+  UsersRound,
+  StickyNote,
+  Bot,
 } from "lucide-react";
 import {
   ACCEPTED_MEDIA,
@@ -78,6 +81,7 @@ import {
   WORK_MODES,
   PROBLEM_TEMPLATES,
   QUICK_TOOLS,
+  DEFAULT_AGENTS,
   extractCodeBlocks,
   stripCodeBlocks,
   formatBytes,
@@ -85,7 +89,11 @@ import {
   exportChatMarkdown,
   suggestFollowUps,
   modeById,
+  detectTechnicalIntent,
+  extractKeyAssets,
+  extractCanvasPayload,
   type WorkModeId,
+  type AgentRoleDef,
 } from "./lib/models";
 import { MarkdownBody } from "./lib/markdown";
 import {
@@ -365,6 +373,24 @@ export default function Home() {
   const [toolsAllowed, setToolsAllowed] = useState(true);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
 
+  // Multi-agent collaborate
+  const [agents, setAgents] = useState<AgentRoleDef[]>(() =>
+    DEFAULT_AGENTS.map((a) => ({ ...a, task: "", enabled: true }))
+  );
+  const [multiAgentEnabled, setMultiAgentEnabled] = useState(true);
+  const [agentPanelOpen, setAgentPanelOpen] = useState(true);
+  const [activeAgentLabel, setActiveAgentLabel] = useState<string | null>(null);
+
+  // Focus mode: floating assets + technical canvas
+  const [focusAssets, setFocusAssets] = useState<
+    { id: string; text: string }[]
+  >([]);
+  const [focusCanvasOpen, setFocusCanvasOpen] = useState(false);
+  const [focusCanvasText, setFocusCanvasText] = useState("");
+  const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(
+    PROBLEM_TEMPLATES[0]?.id ?? null
+  );
+
   const photoRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const composerMenuRef = useRef<HTMLDivElement>(null);
@@ -504,9 +530,15 @@ export default function Home() {
   );
 
   const visibleTemplates = useMemo(() => {
-    if (templateCat === "__all__") return PROBLEM_TEMPLATES;
+    if (templateCat === "__all__") return [...PROBLEM_TEMPLATES];
     return PROBLEM_TEMPLATES.filter((t) => t.category === templateCat);
   }, [templateCat]);
+
+  useEffect(() => {
+    if (!visibleTemplates.some((t) => t.id === previewTemplateId)) {
+      setPreviewTemplateId(visibleTemplates[0]?.id ?? null);
+    }
+  }, [visibleTemplates, previewTemplateId]);
 
   function setLanguage(next: Lang) {
     setUiLang(next);
@@ -929,6 +961,37 @@ export default function Home() {
     return `${text}\n\n${attached}`.trim();
   }
 
+  function applyFocusOutcome(userText: string, assistantText: string) {
+    if (viewTab !== "focus") return;
+    const technical =
+      detectTechnicalIntent(userText) ||
+      extractCodeBlocks(assistantText).length > 0 ||
+      assistantText.length > 900;
+    if (technical) {
+      const payload = extractCanvasPayload(assistantText);
+      if (payload) {
+        setFocusCanvasText(payload);
+        setFocusCanvasOpen(true);
+      }
+      return;
+    }
+    const assets = extractKeyAssets(assistantText);
+    if (assets.length) {
+      setFocusAssets((prev) => {
+        const merged = [...assets, ...prev];
+        const seen = new Set<string>();
+        return merged
+          .filter((a) => {
+            const k = a.text.toLowerCase();
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          })
+          .slice(0, 12);
+      });
+    }
+  }
+
   async function send(opts?: { text?: string; replaceFromId?: string }) {
     if (!activeId || loading) return;
     const raw = (opts?.text ?? input).trim();
@@ -952,6 +1015,23 @@ export default function Home() {
     const content = composeContent(
       finalRaw || i.reviewAttached
     );
+    const focusKind =
+      viewTab === "focus" && detectTechnicalIntent(content)
+        ? "technical"
+        : "general";
+    const activeAgents =
+      viewTab === "collaborate" && multiAgentEnabled
+        ? agents
+            .filter((a) => a.enabled !== false)
+            .map((a) => ({
+              id: a.id,
+              name: a.name,
+              model: a.model,
+              role: a.role,
+              task: a.task || "",
+            }))
+        : [];
+
     setInput("");
     setFiles([]);
     setActiveToolId(null);
@@ -959,6 +1039,9 @@ export default function Home() {
     setComposerMenu("none");
     setLoading(true);
     setAssistantOpen(true);
+    setActiveAgentLabel(
+      activeAgents.length > 0 ? i.multiAgentRunning : null
+    );
 
     const tmpUserId = `tmp_u_${Date.now()}`;
     const tmpAsstId = `tmp_a_${Date.now()}`;
@@ -998,6 +1081,8 @@ export default function Home() {
           replaceFromId: opts?.replaceFromId,
           uiLanguage: uiLang,
           viewTab: viewTab,
+          focusKind,
+          agents: activeAgents.length > 0 ? activeAgents : undefined,
           customMemory: localStorage.getItem("aura-memory-enabled") === "true"
             ? (localStorage.getItem("aura-memory-text") || "")
             : "",
@@ -1020,8 +1105,10 @@ export default function Home() {
             )
           );
         }
-        const codes = extractCodeBlocks(data.assistantMessage?.content || "");
+        const finalText = data.assistantMessage?.content || "";
+        const codes = extractCodeBlocks(finalText);
         if (codes.length) setActiveCodeId(codes[codes.length - 1].id);
+        applyFocusOutcome(content, finalText);
         return;
       }
 
@@ -1051,6 +1138,9 @@ export default function Home() {
                     c.id === activeId ? { ...c, title: evt.title } : c
                   )
                 );
+              }
+              if (evt.type === "agent_start" && evt.agent?.name) {
+                setActiveAgentLabel(evt.agent.name);
               }
               if (evt.type === "delta" && evt.content) {
                 streamed += evt.content;
@@ -1087,6 +1177,7 @@ export default function Home() {
                 }
                 const codes = extractCodeBlocks(finalContent);
                 if (codes.length) setActiveCodeId(codes[codes.length - 1].id);
+                applyFocusOutcome(content, finalContent);
                 // Update title in place — do not move chat to top of history
                 if (evt.title) {
                   setChats((prev) =>
@@ -1125,6 +1216,7 @@ export default function Home() {
       setLoading(false);
       abortRef.current = null;
       setEditingMsgId(null);
+      setActiveAgentLabel(null);
     }
   }
 
@@ -1168,11 +1260,24 @@ export default function Home() {
     showToast(`${next.length} file attached`);
   }
 
-  async function copyText(text: string) {
+  async function copyText(text: string, openCanvasOnFocus = false) {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     showToast(i.copied);
     setTimeout(() => setCopied(false), 1200);
+    if (openCanvasOnFocus && viewTab === "focus") {
+      const payload = extractCanvasPayload(text) || text;
+      setFocusCanvasText(payload);
+      setFocusCanvasOpen(true);
+    }
+  }
+
+  function injectToFocusCanvas(text: string) {
+    const payload = extractCanvasPayload(text) || text;
+    setFocusCanvasText(payload);
+    setFocusCanvasOpen(true);
+    if (viewTab !== "focus") setViewTab("focus");
+    showToast(i.injectToCanvas);
   }
 
   function applyTemplate(t: (typeof PROBLEM_TEMPLATES)[number]) {
@@ -1180,7 +1285,35 @@ export default function Home() {
     setInput(t.prompt);
     setSheet("none");
     setAssistantOpen(true);
+    showToast(i.templateApplied);
     inputRef.current?.focus();
+  }
+
+  function updateAgent(id: string, patch: Partial<AgentRoleDef>) {
+    setAgents((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, ...patch } : a))
+    );
+  }
+
+  function addAgent() {
+    const n = agents.length + 1;
+    const model = GROQ_MODELS[n % GROQ_MODELS.length].id;
+    setAgents((prev) => [
+      ...prev,
+      {
+        id: `agent-${Date.now()}`,
+        name: `Agent ${n}`,
+        model,
+        role: "Contribute a specialized perspective on the user request.",
+        task: "",
+        enabled: true,
+        color: ["#a78bfa", "#f472b6", "#38bdf8", "#fb923c"][n % 4],
+      },
+    ]);
+  }
+
+  function removeAgent(id: string) {
+    setAgents((prev) => (prev.length <= 1 ? prev : prev.filter((a) => a.id !== id)));
   }
 
   const cmdItems = useMemo(() => {
@@ -1439,7 +1572,9 @@ export default function Home() {
       </header>
 
       {/* Centered chat — main conversation */}
-      <main className={`chat-main absolute inset-0 flex flex-col pt-16 transition-all duration-300 ${isFocus ? "pl-4 pr-4 sm:pl-8 sm:pr-8" : "pl-20 sm:pl-24"}`}>
+      <main className={`chat-main absolute inset-0 flex flex-col pt-16 transition-all duration-300 ${isFocus ? "pl-4 pr-4 sm:pl-8 sm:pr-8" : "pl-20 sm:pl-24"} ${isFocus && focusCanvasOpen ? "focus-has-canvas" : ""}`}>
+        <div className={isFocus && focusCanvasOpen ? "focus-split" : "flex flex-1 min-h-0 flex-col"}>
+        <div className={isFocus && focusCanvasOpen ? "focus-split-chat" : "flex flex-1 min-h-0 flex-col"}>
         <div
           ref={listRef}
           className={`chat-scroll scroll-thin flex-1 overflow-y-auto overflow-x-hidden ${chatDensity === "compact" ? "chat-dense" : ""}`}
@@ -1501,10 +1636,10 @@ export default function Home() {
                       <div className={`chat-bubble-wrap ${isUser ? "items-end" : "items-start"}`}>
                         <div className="chat-role flex items-center gap-1.5">
                           {isUser ? i.you : i.brand}
-                          {!isUser && viewTab === "collaborate" && (
+                          {!isUser && viewTab === "collaborate" && multiAgentEnabled && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-[var(--tertiary-container)] px-2 py-0.5 text-[9px] font-semibold text-[var(--on-tertiary-container)] border border-[var(--on-tertiary-container)]/10 lowercase tracking-normal">
-                              <Sparkles className="h-2.5 w-2.5 text-blue-500" />
-                              team-active
+                              <UsersRound className="h-2.5 w-2.5 text-blue-500" />
+                              {activeAgentLabel || i.multiAgentOn}
                             </span>
                           )}
                         </div>
@@ -1590,13 +1725,21 @@ export default function Home() {
                                     type="button"
                                     className="icon-btn !h-8 !w-8 !text-white/70 hover:!text-white"
                                     title={i.copyCode}
-                                    onClick={() => copyText(c.code)}
+                                    onClick={() => copyText(c.code, true)}
                                   >
                                     {copied ? (
                                       <Check className="h-3.5 w-3.5" />
                                     ) : (
                                       <Copy className="h-3.5 w-3.5" />
                                     )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-btn !h-8 !w-8 !text-white/70 hover:!text-white"
+                                    title={i.injectToCanvas}
+                                    onClick={() => injectToFocusCanvas(c.code)}
+                                  >
+                                    <Layers className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
                                 <div className="scroll-thin max-h-52 overflow-auto">
@@ -1627,10 +1770,20 @@ export default function Home() {
                               type="button"
                               className="icon-btn !h-7 !w-7"
                               title={i.copy}
-                              onClick={() => copyText(msg.content)}
+                              onClick={() => copyText(msg.content, true)}
                             >
                               <Copy className="h-3 w-3" />
                             </button>
+                            {!isUser && (
+                              <button
+                                type="button"
+                                className="icon-btn !h-7 !w-7"
+                                title={i.injectToCanvas}
+                                onClick={() => injectToFocusCanvas(msg.content)}
+                              >
+                                <Layers className="h-3 w-3" />
+                              </button>
+                            )}
                             {isUser && (
                               <button
                                 type="button"
@@ -1734,6 +1887,129 @@ export default function Home() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Multi-agent team — Collaborate only */}
+            {!isFocus && (
+              <div className="agent-team">
+                <div className="agent-team-head">
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 min-w-0 text-left"
+                    onClick={() => setAgentPanelOpen((v) => !v)}
+                  >
+                    <UsersRound className="h-3.5 w-3.5 text-[var(--primary)] shrink-0" />
+                    <div className="min-w-0">
+                      <p className="agent-team-title flex items-center gap-1.5">
+                        {i.agentTeam}
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 transition-transform ${
+                            agentPanelOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </p>
+                      <p className="text-[11px] text-[var(--on-surface-variant)] leading-snug">
+                        {multiAgentEnabled
+                          ? `${agents.filter((a) => a.enabled !== false).length} agents · ${i.multiAgentOn}`
+                          : i.agentTeamHint}
+                      </p>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      className={`toggle ${multiAgentEnabled ? "on" : ""}`}
+                      title={i.multiAgentOn}
+                      onClick={() => setMultiAgentEnabled((v) => !v)}
+                    />
+                    {agentPanelOpen && (
+                      <button
+                        type="button"
+                        className="btn-ghost !h-8 !px-2.5 text-[12px]"
+                        onClick={addAgent}
+                        disabled={!multiAgentEnabled}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {i.addAgent}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {agentPanelOpen &&
+                  multiAgentEnabled &&
+                  agents.map((agent) => (
+                    <div
+                      key={agent.id}
+                      className={`agent-row ${agent.enabled === false ? "disabled" : ""}`}
+                    >
+                      <span
+                        className="agent-dot"
+                        style={{ background: agent.color || "var(--primary)" }}
+                      />
+                      <div className="agent-meta">
+                        <div className="agent-name-row">
+                          <Bot className="h-3.5 w-3.5 text-[var(--on-surface-variant)]" />
+                          <input
+                            className="agent-name bg-transparent outline-none min-w-0 flex-1"
+                            value={agent.name}
+                            onChange={(e) =>
+                              updateAgent(agent.id, { name: e.target.value })
+                            }
+                          />
+                          <select
+                            className="agent-model-select"
+                            value={agent.model}
+                            onChange={(e) =>
+                              updateAgent(agent.id, { model: e.target.value })
+                            }
+                          >
+                            {GROQ_MODELS.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <textarea
+                          className="agent-task-input"
+                          rows={1}
+                          placeholder={i.agentTaskPlaceholder}
+                          value={agent.task || ""}
+                          onChange={(e) =>
+                            updateAgent(agent.id, { task: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="agent-actions">
+                        <button
+                          type="button"
+                          className="icon-btn !h-7 !w-7"
+                          title={i.enableAgent}
+                          onClick={() =>
+                            updateAgent(agent.id, {
+                              enabled: agent.enabled === false,
+                            })
+                          }
+                        >
+                          {agent.enabled === false ? (
+                            <EyeOff className="h-3 w-3" />
+                          ) : (
+                            <Eye className="h-3 w-3" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn !h-7 !w-7"
+                          title={i.removeAgent}
+                          onClick={() => removeAgent(agent.id)}
+                          disabled={agents.length <= 1}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
               </div>
             )}
 
@@ -1854,60 +2130,15 @@ export default function Home() {
               </AnimatePresence>
 
               <div className="chat-composer">
-                <button
-                  type="button"
-                  className={`icon-btn !h-9 !w-9 shrink-0 ${composerMenu === "attach" ? "text-[var(--primary)]" : ""}`}
-                  title={i.attachFiles}
-                  onClick={() =>
-                    setComposerMenu((m) => (m === "attach" ? "none" : "attach"))
-                  }
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className={`icon-btn !h-9 !w-9 shrink-0 ${composerMenu === "tools" ? "text-[var(--primary)]" : ""} ${activeToolId ? "text-[var(--primary)]" : ""}`}
-                  title={i.toolsTitle}
-                  onClick={() =>
-                    setComposerMenu((m) => (m === "tools" ? "none" : "tools"))
-                  }
-                >
-                  <Wrench className="h-4 w-4" />
-                </button>
-                {activeToolId && (() => {
-                  const tool = CREATIVE_TOOLS.find((t) => t.id === activeToolId);
-                  if (!tool) return null;
-                  
-                  let label: string = tool.id;
-                  let ToolIcon = Sparkles;
-                  
-                  if (tool.id === "gen-image") { label = i.toolGenImage; ToolIcon = Paintbrush; }
-                  else if (tool.id === "gen-video") { label = i.toolGenVideo; ToolIcon = Video; }
-                  else if (tool.id === "canvas") { label = i.toolCanvas; ToolIcon = Layers; }
-                  else if (tool.id === "convert-file") { label = i.toolConvert; ToolIcon = FileType2; }
-                  else if (tool.id === "compress-file") { label = i.toolCompress; ToolIcon = Archive; }
-                  else if (tool.id === "transcribe") { label = i.toolTranscribe; ToolIcon = Mic; }
-                  else if (tool.id === "data-table") { label = i.toolTable; ToolIcon = Table2; }
-                  else if (tool.id === "diagram") { label = i.toolDiagram; ToolIcon = Sparkles; }
-
-                  return (
-                    <div className="flex items-center gap-1.5 rounded-lg bg-[var(--tertiary-container)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--on-tertiary-container)] border border-[var(--on-tertiary-container)]/10 shrink-0">
-                      <ToolIcon className="h-3.5 w-3.5" />
-                      <span>{label}</span>
-                      <button
-                        type="button"
-                        onClick={() => setActiveToolId(null)}
-                        className="ml-1 opacity-70 hover:opacity-100"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  );
-                })()}
                 <textarea
                   ref={inputRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    const el = e.target;
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+                  }}
                   onKeyDown={(e) => {
                     if (!user.sendWithEnter) return;
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -1919,33 +2150,163 @@ export default function Home() {
                   placeholder={i.messagePlaceholder}
                   className="chat-composer-input"
                 />
-                {loading ? (
-                  <button
-                    type="button"
-                    className="chat-send-btn"
-                    title={i.stop}
-                    onClick={stop}
-                  >
-                    <Square className="h-4 w-4 fill-current" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="chat-send-btn"
-                    onClick={() => send()}
-                    disabled={!input.trim() && files.length === 0}
-                  >
-                    <Send className="h-4 w-4" fill="currentColor" />
-                  </button>
-                )}
+                <div className="chat-composer-toolbar">
+                  <div className="chat-composer-toolbar-left">
+                    <button
+                      type="button"
+                      className={`icon-btn !h-8 !w-8 shrink-0 ${composerMenu === "attach" ? "text-[var(--primary)]" : ""}`}
+                      title={i.attachFiles}
+                      onClick={() =>
+                        setComposerMenu((m) =>
+                          m === "attach" ? "none" : "attach"
+                        )
+                      }
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className={`icon-btn !h-8 !w-8 shrink-0 ${composerMenu === "tools" ? "text-[var(--primary)]" : ""} ${activeToolId ? "text-[var(--primary)]" : ""}`}
+                      title={i.toolsTitle}
+                      onClick={() =>
+                        setComposerMenu((m) =>
+                          m === "tools" ? "none" : "tools"
+                        )
+                      }
+                    >
+                      <Wrench className="h-4 w-4" />
+                    </button>
+                    {activeToolId &&
+                      (() => {
+                        const tool = CREATIVE_TOOLS.find(
+                          (t) => t.id === activeToolId
+                        );
+                        if (!tool) return null;
+
+                        let label: string = tool.id;
+                        let ToolIcon = Sparkles;
+
+                        if (tool.id === "gen-image") {
+                          label = i.toolGenImage;
+                          ToolIcon = Paintbrush;
+                        } else if (tool.id === "gen-video") {
+                          label = i.toolGenVideo;
+                          ToolIcon = Video;
+                        } else if (tool.id === "canvas") {
+                          label = i.toolCanvas;
+                          ToolIcon = Layers;
+                        } else if (tool.id === "convert-file") {
+                          label = i.toolConvert;
+                          ToolIcon = FileType2;
+                        } else if (tool.id === "compress-file") {
+                          label = i.toolCompress;
+                          ToolIcon = Archive;
+                        } else if (tool.id === "transcribe") {
+                          label = i.toolTranscribe;
+                          ToolIcon = Mic;
+                        } else if (tool.id === "data-table") {
+                          label = i.toolTable;
+                          ToolIcon = Table2;
+                        } else if (tool.id === "diagram") {
+                          label = i.toolDiagram;
+                          ToolIcon = Sparkles;
+                        }
+
+                        return (
+                          <div className="flex items-center gap-1.5 rounded-lg bg-[var(--tertiary-container)] px-2 py-1 text-[11px] font-medium text-[var(--on-tertiary-container)] border border-[var(--on-tertiary-container)]/10 shrink-0 max-w-[9rem]">
+                            <ToolIcon className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{label}</span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveToolId(null)}
+                              className="opacity-70 hover:opacity-100"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        );
+                      })()}
+                  </div>
+                  <div className="chat-composer-toolbar-right">
+                    <span className="hidden sm:inline text-[11px] text-[var(--on-surface-variant)] max-w-[10rem] truncate">
+                      {currentModel.label}
+                    </span>
+                    {loading ? (
+                      <button
+                        type="button"
+                        className="chat-send-btn"
+                        title={i.stop}
+                        onClick={stop}
+                      >
+                        <Square className="h-4 w-4 fill-current" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="chat-send-btn"
+                        onClick={() => send()}
+                        disabled={!input.trim() && files.length === 0}
+                      >
+                        <Send className="h-4 w-4" fill="currentColor" />
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
             <p className="mt-2 text-center text-[11px] text-[var(--on-surface-variant)]">
               {currentMode.label} · {currentModel.label}
+              {!isFocus && multiAgentEnabled
+                ? ` · ${i.multiAgentOn}`
+                : ""}
               {activeToolId ? ` · ${i.toolsTitle}` : ""}
+              {isFocus ? ` · ${i.focusMode}` : ""}
             </p>
           </div>
         </div>
+        </div>{/* end focus-split-chat / chat column stack */}
+
+        {/* Focus technical canvas — right pane */}
+        {isFocus && focusCanvasOpen && (
+          <aside className="focus-canvas-panel">
+            <div className="focus-canvas-head">
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-[var(--on-surface)] flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5" />
+                  {i.focusCanvas}
+                </p>
+                <p className="text-[11px] text-[var(--on-surface-variant)]">
+                  {i.focusCanvasHint}
+                </p>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="icon-btn !h-8 !w-8"
+                  title={i.copyCanvas}
+                  onClick={() => copyText(focusCanvasText)}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn !h-8 !w-8"
+                  title={i.closeCanvas}
+                  onClick={() => setFocusCanvasOpen(false)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <textarea
+              className="focus-canvas-editor scroll-thin"
+              value={focusCanvasText}
+              onChange={(e) => setFocusCanvasText(e.target.value)}
+              spellCheck={false}
+            />
+          </aside>
+        )}
+        </div>{/* end focus-split / outer flex */}
       </main>
 
       {isFocus && (
@@ -1955,8 +2316,40 @@ export default function Home() {
           className="fixed top-4 right-4 z-[70] flex items-center gap-2 rounded-full border border-[var(--outline-variant)]/40 bg-[var(--surface-container-lowest)]/80 backdrop-blur-md px-3.5 py-1.5 text-[12px] font-semibold text-[var(--on-surface-variant)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--on-surface)]"
         >
           <X className="h-3.5 w-3.5" />
-          <span>Exit Focus</span>
+          <span>{i.exitFocus}</span>
         </button>
+      )}
+
+      {/* Focus floating asset dock — normal chat takeaways */}
+      {isFocus && !focusCanvasOpen && focusAssets.length > 0 && (
+        <div className="focus-asset-dock">
+          <div className="focus-asset-dock-head">
+            <p className="focus-asset-dock-title flex items-center gap-1.5">
+              <StickyNote className="h-3.5 w-3.5" />
+              {i.assetDock}
+            </p>
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-[var(--on-surface-variant)] hover:text-[var(--on-surface)]"
+              onClick={() => setFocusAssets([])}
+            >
+              {i.clearAssets}
+            </button>
+          </div>
+          <div className="focus-asset-list scroll-thin">
+            {focusAssets.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                className="focus-asset-item"
+                onClick={() => copyText(a.text)}
+                title={i.copy}
+              >
+                {a.text}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Live Preview Panel */}
@@ -2163,7 +2556,9 @@ ${bodyHtml}
       </AnimatePresence>
 
       {/* Bottom dock — unique actions only (attach/tools live on composer) */}
-      <div className="bottom-dock glass-bar">
+      <div
+        className={`bottom-dock glass-bar ${isFocus ? "is-focus" : "with-rail"}`}
+      >
         <button
           type="button"
           className="dock-item"
@@ -2173,6 +2568,8 @@ ${bodyHtml}
             setAssistantOpen(true);
             setActiveToolId(null);
             setComposerMenu("none");
+            setFocusCanvasOpen(false);
+            setFocusAssets([]);
             inputRef.current?.focus();
           }}
         >
@@ -2186,16 +2583,42 @@ ${bodyHtml}
 
         <button
           type="button"
-          className={`dock-item ${allCodes.length > 0 ? "active" : ""}`}
+          className={`dock-item ${
+            allCodes.length > 0 || focusCanvasOpen ? "active" : ""
+          }`}
           title={i.focusCodeOnCanvas}
           onClick={() => {
+            if (isFocus) {
+              if (focusCanvasOpen) {
+                setFocusCanvasOpen(false);
+                return;
+              }
+              const lastAsst = [...messages]
+                .reverse()
+                .find((m) => m.role === "assistant" && m.content.trim());
+              if (allCodes.length) {
+                setActiveCodeId(allCodes[allCodes.length - 1].id);
+                injectToFocusCanvas(
+                  allCodes.map((c) => `\`\`\`${c.lang}\n${c.code}\n\`\`\``).join("\n\n")
+                );
+                return;
+              }
+              if (lastAsst) {
+                injectToFocusCanvas(lastAsst.content);
+                return;
+              }
+              setFocusCanvasOpen(true);
+              showToast(i.openCanvas);
+              return;
+            }
             if (!allCodes.length) {
               showToast(i.noCodeYet);
               return;
             }
             setActiveCodeId(allCodes[allCodes.length - 1].id);
-            setViewTab("collaborate");
-            showToast(i.codeOnCanvas);
+            injectToFocusCanvas(
+              allCodes.map((c) => `\`\`\`${c.lang}\n${c.code}\n\`\`\``).join("\n\n")
+            );
           }}
         >
           <div className="dock-icon">
@@ -2414,7 +2837,7 @@ ${bodyHtml}
         )}
       </AnimatePresence>
 
-      {/* Templates drawer — slide from right */}
+      {/* Templates drawer — list + live preview */}
       <AnimatePresence>
         {sheet === "templates" && (
           <motion.div
@@ -2425,7 +2848,7 @@ ${bodyHtml}
             onClick={() => setSheet("none")}
           >
             <motion.div
-              className="sheet wide"
+              className="sheet templates-sheet"
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
@@ -2483,20 +2906,82 @@ ${bodyHtml}
                 </div>
               </div>
 
-              <div className="sheet-body space-y-2">
-                {visibleTemplates.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => applyTemplate(t)}
-                    className="template-card"
-                  >
-                    <span className="t-cat">{t.category}</span>
-                    <span className="t-title block">{t.title}</span>
-                    <span className="t-desc line-clamp-2 block">{t.prompt}</span>
-                  </button>
-                ))}
-              </div>
+              {(() => {
+                const selected =
+                  visibleTemplates.find((t) => t.id === previewTemplateId) ||
+                  visibleTemplates[0] ||
+                  null;
+                return (
+                  <div className="templates-layout">
+                    <div className="templates-list scroll-thin space-y-2">
+                      {visibleTemplates.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setPreviewTemplateId(t.id)}
+                          onDoubleClick={() => applyTemplate(t)}
+                          className={`template-card ${
+                            selected?.id === t.id ? "active" : ""
+                          }`}
+                        >
+                          <span className="t-cat">{t.category}</span>
+                          <span className="t-title block">{t.title}</span>
+                          <span className="t-desc line-clamp-2 block">
+                            {t.description}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="template-preview-pane">
+                      {selected ? (
+                        <>
+                          <div className="template-preview-head">
+                            <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--on-surface-variant)]">
+                              {i.templatePreview}
+                            </p>
+                            <h3 className="mt-1 text-[15px] font-semibold text-[var(--on-surface)]">
+                              {selected.title}
+                            </h3>
+                            <p className="mt-1 text-[12.5px] leading-snug text-[var(--on-surface-variant)]">
+                              {selected.description}
+                            </p>
+                            <button
+                              type="button"
+                              className="btn-primary mt-3 !h-9 !px-4 text-[13px]"
+                              onClick={() => applyTemplate(selected)}
+                            >
+                              {i.useTemplate}
+                            </button>
+                          </div>
+                          <div className="template-preview-body scroll-thin">
+                            <div className="template-preview-block">
+                              <div className="template-preview-block-label">
+                                {i.templateExampleInput}
+                              </div>
+                              <div className="template-preview-block-body">
+                                {selected.preview.input}
+                              </div>
+                            </div>
+                            <div className="template-preview-block">
+                              <div className="template-preview-block-label">
+                                {i.templateExampleOutput}
+                              </div>
+                              <div className="template-preview-block-body">
+                                {selected.preview.output}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="template-preview-empty">
+                          {i.templatePreviewEmpty}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}

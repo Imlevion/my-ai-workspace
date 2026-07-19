@@ -122,103 +122,313 @@ export function buildSystemPrompt(
   return `${mode.system}\n\nAdditional preferences:\n${custom}`;
 }
 
-/** Real-world problem templates people open AI tools for */
+/** Default multi-agent team for Collaborate mode */
+export const DEFAULT_AGENTS = [
+  {
+    id: "agent-planner",
+    name: "Planner",
+    model: "llama-3.3-70b-versatile",
+    role: "Break down the request, outline approach, list assumptions and success criteria.",
+    color: "#60a5fa",
+  },
+  {
+    id: "agent-coder",
+    name: "Builder",
+    model: "qwen/qwen3-32b",
+    role: "Execute the technical work: code, specs, concrete deliverables.",
+    color: "#34d399",
+  },
+  {
+    id: "agent-reviewer",
+    name: "Reviewer",
+    model: "openai/gpt-oss-120b",
+    role: "Critique quality, risks, and suggest improvements. Keep it sharp.",
+    color: "#fbbf24",
+  },
+] as const;
+
+export type AgentRoleDef = {
+  id: string;
+  name: string;
+  model: string;
+  role: string;
+  color: string;
+  task?: string;
+  enabled?: boolean;
+};
+
+/** Real-world problem templates with live preview examples */
 export const PROBLEM_TEMPLATES = [
   {
     id: "career-decision",
     category: "Decisions",
     title: "Career decision framework",
+    description: "Compare options with a weighted matrix and a 30-day action plan.",
     prompt:
       "Help me decide between two career options. Ask me the missing details briefly, then build a decision matrix (impact, risk, growth, lifestyle, money) and recommend a path with a 30-day action plan.",
     mode: "solve" as WorkModeId,
+    preview: {
+      input: "Option A: Senior engineer at startup · Option B: Staff role at big tech",
+      output: `**Recommendation:** Staff role (B) if stability matters; startup (A) if upside & ownership matter.
+
+| Criterion | A (Startup) | B (Big tech) |
+|-----------|-------------|--------------|
+| Impact    | High        | Medium       |
+| Risk      | High        | Low          |
+| Growth    | Steep       | Steady       |
+| Lifestyle | Intense     | Predictable  |
+| Money     | Equity bet  | Cash strong  |
+
+**30-day plan**
+1. List non-negotiables (comp, hours, learning)
+2. Talk to 2 people in each path
+3. Negotiate both offers with BATNA clear`,
+    },
   },
   {
     id: "email-hard",
     category: "Writing",
     title: "Difficult email",
+    description: "Firm and warm drafts under 180 words for sensitive situations.",
     prompt:
       "Draft a clear, professional email for a sensitive situation. I'll describe context next. Give me 2 tone options (firm / warm) under 180 words each, plus a subject line.",
     mode: "write" as WorkModeId,
+    preview: {
+      input: "Need to push back on an unrealistic deadline from a client",
+      output: `**Subject:** Timeline adjustment for Phase 2
+
+**Firm**
+Hi Maya — thanks for the urgency. Shipping by Friday would cut QA and risk regressions. We can deliver a solid release by next Wednesday with the full test pass. If Friday is fixed, we need to descope X and Y. Which do you prefer?
+
+**Warm**
+Hi Maya — I hear the pressure on Friday. To protect quality, Wednesday is safer for a complete release. Happy to walk through trade-offs on a quick call if that helps.`,
+    },
   },
   {
     id: "bug-debug",
     category: "Code",
     title: "Debug this bug",
+    description: "Root cause, minimal fix, and a short test plan.",
     prompt:
       "I'll paste an error and relevant code. Find the root cause, explain why it fails, and give a minimal fix with a short test plan.",
     mode: "code" as WorkModeId,
+    preview: {
+      input: "TypeError: Cannot read properties of undefined (reading 'map')",
+      output: `**Root cause:** \`items\` is \`undefined\` before the fetch resolves.
+
+**Fix**
+\`\`\`tsx
+const list = items ?? [];
+return list.map((x) => <Row key={x.id} {...x} />);
+\`\`\`
+
+**Test plan**
+1. Mount with no data → empty state, no crash
+2. Resolve fetch with 3 items → renders rows
+3. Reject fetch → error UI`,
+    },
   },
   {
     id: "meeting-notes",
     category: "Work",
     title: "Meeting → action items",
+    description: "Turn messy notes into summary, decisions, and owners.",
     prompt:
       "Turn the notes I paste into: executive summary, decisions, action items (owner · deadline · priority), and open questions.",
     mode: "summarize" as WorkModeId,
+    preview: {
+      input: "Talked Q3 launch… need design freeze… eng worried about scope…",
+      output: `**Summary:** Team aims for Q3 launch; design freeze and scope control are blockers.
+
+**Decisions**
+- Freeze UI by May 12
+- Cut “share to Slack” from MVP
+
+**Action items**
+| Owner | Task | Deadline | P |
+|-------|------|----------|---|
+| Ana | Final Figma | May 12 | P0 |
+| Ken | Scope PRD | May 10 | P0 |
+
+**Open questions**
+- Do we need analytics v1 at launch?`,
+    },
   },
   {
     id: "study-plan",
     category: "Learning",
     title: "Learn something fast",
+    description: "A focused 14-day plan with drills and success checks.",
     prompt:
       "Create a focused 14-day learning plan for a skill I name. Include daily goals, resources, practice drills, and how I'll know I've leveled up.",
     mode: "plan" as WorkModeId,
+    preview: {
+      input: "Skill: TypeScript for React apps",
+      output: `**Goal:** Ship a typed React feature without \`any\`.
+
+**Days 1–3:** Basics — types, interfaces, unions  
+**Days 4–7:** React props, hooks typing, events  
+**Days 8–11:** Generics, utility types, API responses  
+**Days 12–14:** Build a mini CRUD page fully typed
+
+**Level-up check:** PR has zero \`any\`, props inferred, and tests pass.`,
+    },
   },
   {
     id: "negotiate",
     category: "Work",
     title: "Salary / rate negotiation",
+    description: "Scripts, BATNA, and replies for common pushback.",
     prompt:
       "Coach me for a compensation negotiation. Build a script, BATNA, and response lines for common pushback. Keep it practical and respectful.",
     mode: "solve" as WorkModeId,
+    preview: {
+      input: "Offer is 15% below market; I have another interview next week",
+      output: `**BATNA:** Other process + current role stability.
+
+**Script**
+“I’m excited about the team. Based on market data and scope, I was targeting X–Y. Can we close that gap?”
+
+**Pushback lines**
+- “Budget is fixed” → “Could we add a 6-month review or signing bonus?”
+- “That’s our band” → “Happy to discuss leveling if scope matches.”`,
+    },
   },
   {
     id: "data-insight",
     category: "Analysis",
     title: "Make sense of this data",
+    description: "Top insights, anomalies, and weekly recommendations.",
     prompt:
       "I'll paste CSV or metrics. Surface the top insights, anomalies, and 3 recommendations a manager could act on this week.",
     mode: "analyze" as WorkModeId,
+    preview: {
+      input: "Week 12 conversion 2.1% → Week 13 1.4%; traffic +20%",
+      output: `**Insights**
+- Conversion dropped 33% while traffic rose — quality or funnel issue
+- Spike in mobile share correlates with drop
+
+**Anomaly:** Checkout step 2 error rate 4× baseline
+
+**This week**
+1. Fix checkout step 2 error
+2. Segment mobile vs desktop conversion
+3. Pause low-intent traffic sources`,
+    },
   },
   {
     id: "product-spec",
     category: "Product",
     title: "Product spec outline",
+    description: "Lean PRD: problem, users, stories, scope, risks.",
     prompt:
       "Draft a lean product spec: problem, users, goals/metrics, user stories, scope in/out, risks, and MVP checklist.",
     mode: "plan" as WorkModeId,
+    preview: {
+      input: "In-app shared clipboard for design teams",
+      output: `**Problem:** Designers lose context pasting assets across tools.
+
+**Users:** Product designers on web
+
+**Goals:** Time-to-paste −40%; weekly active sharers ≥ 30%
+
+**Stories**
+- As a designer, I pin an asset to the team board
+- As a teammate, I paste with one click
+
+**MVP:** pin, search, paste, permissions  
+**Out:** version history, Figma plugin
+
+**Risks:** permission leaks; clipboard API limits`,
+    },
   },
   {
     id: "rewrite-clear",
     category: "Writing",
     title: "Make this clearer",
+    description: "Tighter rewrite plus a short changelog of edits.",
     prompt:
       "Rewrite the text I paste to be clearer and more concise. Preserve meaning. Show: improved version, then a short list of what you changed.",
     mode: "write" as WorkModeId,
+    preview: {
+      input: "Due to the fact that we are currently in the process of…",
+      output: `**Improved**
+We’re finishing the migration this week, so reports may lag by a day.
+
+**Changes**
+- Cut filler (“due to the fact that”)
+- Concrete timeline
+- One idea per sentence`,
+    },
   },
   {
     id: "system-design",
     category: "Code",
     title: "System design sketch",
+    description: "Architecture, data model, APIs, scale, and failure modes.",
     prompt:
       "Help me design a system for a problem I describe. Cover requirements, architecture diagram (mermaid or ascii), data model, API sketch, scaling, and failure modes.",
     mode: "code" as WorkModeId,
+    preview: {
+      input: "URL shortener for 10M links / day",
+      output: `**Requirements:** create, redirect, analytics; p99 < 50ms redirect
+
+\`\`\`mermaid
+flowchart LR
+  Client --> API --> Cache
+  API --> DB
+  API --> Queue --> Analytics
+\`\`\`
+
+**Data:** \`links(id, code, url, owner, created)\`
+
+**API**
+- \`POST /links\`
+- \`GET /:code\` → 302
+
+**Scale:** cache hot codes; shard by code prefix  
+**Failure:** cache miss → DB; DB down → stale cache only`,
+    },
   },
   {
     id: "translate-tone",
     category: "Language",
     title: "Translate with tone",
+    description: "Keep original tone; flag phrases that don’t map cleanly.",
     prompt:
       "Translate the text I paste. Keep the original tone. Provide the translation, then note any phrases that don't map cleanly.",
     mode: "translate" as WorkModeId,
+    preview: {
+      input: "EN → ID: “Let’s circle back after we land the launch.”",
+      output: `**Translation**
+“Mari kita bahas lagi setelah peluncuran selesai.”
+
+**Notes**
+- “Circle back” → “bahas lagi” (natural, not literal)
+- “Land the launch” → “peluncuran selesai”`,
+    },
   },
   {
     id: "weekly-review",
     category: "Productivity",
     title: "Weekly review",
+    description: "Wins, blockers, lessons, and next-week priorities.",
     prompt:
       "Run a weekly review with me. Ask for wins, blockers, and priorities. Output: reflection, lessons, and a prioritized plan for next week.",
     mode: "plan" as WorkModeId,
+    preview: {
+      input: "Shipped auth; stuck on billing; want to start notifications",
+      output: `**Reflection:** Auth shipped is a real win; billing is the critical path.
+
+**Lessons**
+- Scope creep on billing UI
+- Need earlier QA on payments
+
+**Next week (priority)**
+1. Close billing edge cases (P0)
+2. Write payment runbook
+3. Spike notifications only if billing green`,
+    },
   },
 ] as const;
 
@@ -274,6 +484,84 @@ export function extractCodeBlocks(text: string) {
 
 export function stripCodeBlocks(text: string) {
   return text.replace(/```(?:\w+)?\n[\s\S]*?```/g, "").trim();
+}
+
+/** Detect technical / long-form work that should open Focus canvas */
+export function detectTechnicalIntent(text: string): boolean {
+  const t = text.toLowerCase();
+  if (text.includes("```")) return true;
+  if (text.length > 1200) return true;
+  const keywords = [
+    "code",
+    "function",
+    "component",
+    "implement",
+    "debug",
+    "api",
+    "typescript",
+    "javascript",
+    "python",
+    "react",
+    "html",
+    "css",
+    "sql",
+    "bikin",
+    "buatkan",
+    "tulis kode",
+    "draft",
+    "artikel",
+    "essay",
+    "script",
+    "refactor",
+    "bug",
+    "class ",
+    "interface ",
+    "write a",
+    "generate code",
+    "full code",
+  ];
+  return keywords.some((k) => t.includes(k));
+}
+
+/** Pull key takeaways for the Focus floating asset dock */
+export function extractKeyAssets(
+  text: string,
+  max = 6
+): { id: string; text: string }[] {
+  const clean = stripCodeBlocks(text).trim();
+  if (!clean) return [];
+
+  const lines = clean
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const bullets = lines
+    .filter((l) => /^[-*•]\s+/.test(l) || /^\d+[.)]\s+/.test(l))
+    .map((l) => l.replace(/^[-*•]\s+/, "").replace(/^\d+[.)]\s+/, ""))
+    .filter((l) => l.length > 8 && l.length < 220);
+
+  const assets = (bullets.length ? bullets : lines)
+    .slice(0, max)
+    .map((t, i) => ({
+      id: `asset-${Date.now()}-${i}`,
+      text: t.replace(/^#+\s*/, "").replace(/\*\*/g, "").slice(0, 180),
+    }));
+
+  return assets;
+}
+
+/** Prefer code / long prose for canvas injection */
+export function extractCanvasPayload(text: string): string {
+  const codes = extractCodeBlocks(text);
+  if (codes.length) {
+    return codes
+      .map((c) => `\`\`\`${c.lang}\n${c.code}\n\`\`\``)
+      .join("\n\n");
+  }
+  const clean = stripCodeBlocks(text).trim();
+  if (clean.length > 400) return clean;
+  return clean;
 }
 
 export function formatBytes(n: number) {
