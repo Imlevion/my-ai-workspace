@@ -12,13 +12,13 @@ export async function GET() {
   if (!user) {
     try {
       let guestUser = await prisma.user.findUnique({
-        where: { email: "guest@aura.ai" },
+        where: { email: "guest@construct.dev" },
       });
 
       if (!guestUser) {
         guestUser = await prisma.user.create({
           data: {
-            email: "guest@aura.ai",
+            email: "guest@construct.dev",
             name: "Guest User",
             passwordHash: "$2a$10$7Z8v4kYd5QJmKzV8t4E8e.r1rXm.gXk5U8Wq6Q6R6x6X6x6x6x6x6",
           },

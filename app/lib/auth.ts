@@ -3,7 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 
-const COOKIE = "aura_session";
+const COOKIE = "construct_session";
 
 export type SessionUser = {
   id: string;
@@ -21,7 +21,7 @@ export type SessionUser = {
 };
 
 function secret() {
-  const s = process.env.AUTH_SECRET || "aura-dev-secret-change-me";
+  const s = process.env.AUTH_SECRET || "construct-dev-secret-change-me";
   return new TextEncoder().encode(s);
 }
 

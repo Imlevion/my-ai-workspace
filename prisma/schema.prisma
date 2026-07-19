@@ -16,7 +16,7 @@ model User {
   theme         String   @default("dark")
   temperature   Float    @default(0.7)
   maxTokens     Int      @default(4096)
-  systemPrompt  String   @default("You are Aura, a precise and elegant AI assistant. Be clear, structured, and useful. When writing code, use fenced markdown blocks with a language tag.")
+  systemPrompt  String   @default("You are Construct, a precise and elegant AI assistant. Be clear, structured, and useful. When writing code, use fenced markdown blocks with a language tag.")
   sendWithEnter Boolean  @default(true)
   showCanvas    Boolean  @default(true)
   createdAt     DateTime @default(now())
