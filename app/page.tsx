@@ -519,9 +519,16 @@ export default function Home() {
     setTimeout(() => setToast(null), 2000);
   }, []);
 
+  function setThemeCookie(themeName: string) {
+    if (typeof window === "undefined") return;
+    const resolved = resolveThemeMode(themeName);
+    document.cookie = `theme=${resolved}; path=/; max-age=31536000; SameSite=Lax`;
+  }
+
   function applyTheme(themeName: string) {
     const resolved = resolveThemeMode(themeName);
     document.documentElement.setAttribute("data-theme", resolved);
+    setThemeCookie(themeName);
   }
 
   useEffect(() => {
@@ -536,6 +543,7 @@ export default function Home() {
   function pickTheme(next: "dark" | "light" | "system") {
     setThemeDraft(next);
     applyTheme(next);
+    setThemeCookie(next);
   }
 
   function applyUser(u: User) {
@@ -549,6 +557,7 @@ export default function Home() {
     setCanvasDraft(u.showCanvas ?? true);
     setThemeDraft((u.theme as any) || "light");
     applyTheme(u.theme || "light");
+    setThemeCookie(u.theme || "light");
   }
 
   async function loadChat(id: string) {
@@ -932,11 +941,20 @@ export default function Home() {
       return;
     }
 
+    let finalRaw = raw;
+    if (activeToolId) {
+      const tool = CREATIVE_TOOLS.find((t) => t.id === activeToolId);
+      if (tool) {
+        finalRaw = `${tool.prompt}${raw}`;
+      }
+    }
+
     const content = composeContent(
-      raw || i.reviewAttached
+      finalRaw || i.reviewAttached
     );
     setInput("");
     setFiles([]);
+    setActiveToolId(null);
     setError(null);
     setComposerMenu("none");
     setLoading(true);
@@ -979,6 +997,7 @@ export default function Home() {
           stream: true,
           replaceFromId: opts?.replaceFromId,
           uiLanguage: uiLang,
+          viewTab: viewTab,
           customMemory: localStorage.getItem("aura-memory-enabled") === "true"
             ? (localStorage.getItem("aura-memory-text") || "")
             : "",
@@ -1255,7 +1274,7 @@ export default function Home() {
                   repeat: Infinity,
                   ease: "easeInOut",
                 }}
-                className="flex h-36 w-36 items-center justify-center rounded-[2rem] bg-[var(--surface-container-lowest)] shadow-[0_16px_48px_rgb(0,0,0,0.12)] border border-[var(--outline-variant)]/25 sm:h-44 sm:w-44"
+                className="flex items-center justify-center"
               >
                 <ConstructIcon branded className="h-28 w-28 sm:h-36 sm:w-36" />
               </motion.div>
@@ -1304,7 +1323,7 @@ export default function Home() {
       />
 
       {/* Left rail — history + templates only (no duplicate chat/attach) */}
-      <nav className="glass-rail fixed bottom-4 left-4 top-[4.75rem] z-50 flex w-20 flex-col items-center gap-4 rounded-2xl py-7">
+      <nav className={`glass-rail fixed bottom-4 left-4 top-[4.75rem] z-50 flex w-20 flex-col items-center gap-4 rounded-2xl py-7 transition-all duration-300 ${isFocus ? "-translate-x-28 opacity-0 pointer-events-none" : ""}`}>
         <button
           type="button"
           className={`rail-btn ${viewTab === "collaborate" && sheet === "none" ? "active" : ""}`}
@@ -1339,7 +1358,7 @@ export default function Home() {
       </nav>
 
       {/* Full-width top navbar */}
-      <header className="glass-header fixed inset-x-0 top-0 z-[60] flex h-16 items-center justify-between gap-4 px-5 md:px-8">
+      <header className={`glass-header fixed inset-x-0 top-0 z-[60] flex h-16 items-center justify-between gap-4 px-5 md:px-8 transition-all duration-300 ${isFocus ? "-translate-y-20 opacity-0 pointer-events-none" : ""}`}>
         <div className="flex min-w-0 flex-1 items-center gap-6 md:gap-8">
           <h1 className="shrink-0 text-[20px] font-semibold tracking-[-0.03em] text-[var(--on-surface)] md:text-[22px]">
             Construct
@@ -1420,7 +1439,7 @@ export default function Home() {
       </header>
 
       {/* Centered chat — main conversation */}
-      <main className={`chat-main absolute inset-0 flex flex-col pt-16 pl-20 sm:pl-24 ${isFocus ? "chat-main-focus" : ""}`}>
+      <main className={`chat-main absolute inset-0 flex flex-col pt-16 transition-all duration-300 ${isFocus ? "pl-4 pr-4 sm:pl-8 sm:pr-8" : "pl-20 sm:pl-24"}`}>
         <div
           ref={listRef}
           className={`chat-scroll scroll-thin flex-1 overflow-y-auto overflow-x-hidden ${chatDensity === "compact" ? "chat-dense" : ""}`}
@@ -1480,8 +1499,14 @@ export default function Home() {
                         </div>
                       )}
                       <div className={`chat-bubble-wrap ${isUser ? "items-end" : "items-start"}`}>
-                        <div className="chat-role">
+                        <div className="chat-role flex items-center gap-1.5">
                           {isUser ? i.you : i.brand}
+                          {!isUser && viewTab === "collaborate" && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--tertiary-container)] px-2 py-0.5 text-[9px] font-semibold text-[var(--on-tertiary-container)] border border-[var(--on-tertiary-container)]/10 lowercase tracking-normal">
+                              <Sparkles className="h-2.5 w-2.5 text-blue-500" />
+                              team-active
+                            </span>
+                          )}
                         </div>
 
                         {isEditing ? (
@@ -1812,10 +1837,7 @@ export default function Home() {
                             className={`tool-chip ${activeToolId === id ? "active" : ""}`}
                             onClick={() => {
                               if (!toolsAllowed || !tool) return;
-                              setActiveToolId(id);
-                              setInput((prev) =>
-                                prev.startsWith(tool.prompt) ? prev : `${tool.prompt}${prev}`
-                              );
+                              setActiveToolId(id === activeToolId ? null : id);
                               setComposerMenu("none");
                               setTimeout(() => inputRef.current?.focus(), 40);
                               showToast(label);
@@ -1852,6 +1874,36 @@ export default function Home() {
                 >
                   <Wrench className="h-4 w-4" />
                 </button>
+                {activeToolId && (() => {
+                  const tool = CREATIVE_TOOLS.find((t) => t.id === activeToolId);
+                  if (!tool) return null;
+                  
+                  let label: string = tool.id;
+                  let ToolIcon = Sparkles;
+                  
+                  if (tool.id === "gen-image") { label = i.toolGenImage; ToolIcon = Paintbrush; }
+                  else if (tool.id === "gen-video") { label = i.toolGenVideo; ToolIcon = Video; }
+                  else if (tool.id === "canvas") { label = i.toolCanvas; ToolIcon = Layers; }
+                  else if (tool.id === "convert-file") { label = i.toolConvert; ToolIcon = FileType2; }
+                  else if (tool.id === "compress-file") { label = i.toolCompress; ToolIcon = Archive; }
+                  else if (tool.id === "transcribe") { label = i.toolTranscribe; ToolIcon = Mic; }
+                  else if (tool.id === "data-table") { label = i.toolTable; ToolIcon = Table2; }
+                  else if (tool.id === "diagram") { label = i.toolDiagram; ToolIcon = Sparkles; }
+
+                  return (
+                    <div className="flex items-center gap-1.5 rounded-lg bg-[var(--tertiary-container)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--on-tertiary-container)] border border-[var(--on-tertiary-container)]/10 shrink-0">
+                      <ToolIcon className="h-3.5 w-3.5" />
+                      <span>{label}</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveToolId(null)}
+                        className="ml-1 opacity-70 hover:opacity-100"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  );
+                })()}
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -1895,6 +1947,17 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {isFocus && (
+        <button
+          type="button"
+          onClick={() => setViewTab("collaborate")}
+          className="fixed top-4 right-4 z-[70] flex items-center gap-2 rounded-full border border-[var(--outline-variant)]/40 bg-[var(--surface-container-lowest)]/80 backdrop-blur-md px-3.5 py-1.5 text-[12px] font-semibold text-[var(--on-surface-variant)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--on-surface)]"
+        >
+          <X className="h-3.5 w-3.5" />
+          <span>Exit Focus</span>
+        </button>
+      )}
 
       {/* Live Preview Panel */}
       <AnimatePresence>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
 
 const sans = Inter({
@@ -18,16 +19,19 @@ export const metadata: Metadata = {
   description: "AI workspace for thinking, coding, and building.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const theme = cookieStore.get("theme")?.value || "dark";
+
   return (
     <html
       lang="en"
       className={`${sans.variable} ${mono.variable} h-full`}
-      data-theme="light"
+      data-theme={theme}
     >
       <body className="min-h-full antialiased">{children}</body>
     </html>

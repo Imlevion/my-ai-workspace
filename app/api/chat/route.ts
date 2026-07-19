@@ -86,10 +86,22 @@ export async function POST(req: Request) {
       uiLanguage === "id"
         ? "Always respond in Bahasa Indonesia unless the user explicitly asks for another language. Keep technical terms clear; code and identifiers stay in their original form."
         : "Always respond in English unless the user explicitly asks for another language. Keep technical terms clear; code and identifiers stay in their original form.";
+    const viewTab = String(body.viewTab || "collaborate");
     const basePrompt = buildSystemPrompt(user.systemPrompt, mode);
     let systemPromptContent = `${basePrompt}\n\n[Language]:\n${langLine}`;
     if (customMemory) {
       systemPromptContent += `\n\n[User Memory Context]:\nRemember this context about the user for the assistant's responses:\n${customMemory}`;
+    }
+    if (viewTab === "collaborate") {
+      systemPromptContent += `\n\n[Collaboration Mode]:\nYou are running in MULTI-AGENT COLLABORATION MODE. A team of specialized models is working on this response.
+- Planning & Reasoning Model (Llama-3.3-70b-versatile)
+- Coding & Tech Writer Model (Qwen3 32B)
+- Summarizer & Drafter Model (GPT-OSS 120B)
+Your outputs must start with a small, neat markdown badge/block indicating this collaboration. For example:
+\`\`\`text
+[Collaboration Team: Llama 3.3 (Reasoning) + Qwen 32B (Coding)]
+\`\`\`
+Followed by the collaborative response doing each part. Keep it clean, professional, and do not repeat this header instruction.`;
     }
 
     const payloadMessages = [
