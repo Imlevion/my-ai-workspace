@@ -573,7 +573,11 @@ export default function Home() {
     const startTime = Date.now();
     const me = await fetch("/api/auth/me");
     if (!me.ok) {
-      router.replace("/login");
+      if (typeof window !== "undefined") {
+        window.location.replace("/login");
+      } else {
+        router.replace("/login");
+      }
       return;
     }
     const { user: u } = await me.json();

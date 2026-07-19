@@ -62,8 +62,30 @@ function resolveDbPath() {
   return source;
 }
 
+import { execSync } from "child_process";
+
 function createClient() {
   const dbPath = resolveDbPath();
+  
+  if (dbPath !== ":memory:") {
+    try {
+      const stats = fs.existsSync(dbPath) ? fs.statSync(dbPath) : null;
+      if (!stats || stats.size === 0) {
+        console.log("Database file is new or empty. Running prisma db push programmatically...");
+        execSync("npx prisma db push --accept-data-loss", {
+          env: {
+            ...process.env,
+            DATABASE_URL: `file:${dbPath}`
+          },
+          stdio: "inherit"
+        });
+        console.log("Database schema pushed successfully.");
+      }
+    } catch (err) {
+      console.error("Failed to push schema programmatically:", err);
+    }
+  }
+
   const adapter = new PrismaBetterSqlite3({ url: dbPath });
   return new PrismaClient({ adapter });
 }
