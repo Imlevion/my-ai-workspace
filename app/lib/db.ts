@@ -13,29 +13,32 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  * In production, copy the built root DB to a writable /tmp path.
  */
 function resolveDbPath() {
-  const url =
-    process.env.DATABASE_URL ||
-    (process.env.NODE_ENV === "production" ? "file:/tmp/dev.db" : "file:./dev.db");
-  if (url === ":memory:") return ":memory:";
+  if (process.env.DATABASE_URL) {
+    if (process.env.DATABASE_URL === ":memory:") return ":memory:";
+    let raw = process.env.DATABASE_URL.replace(/^file:/, "");
+    if (raw.startsWith("./")) raw = raw.slice(2);
+    if (path.isAbsolute(raw)) return raw;
+    return path.resolve(process.cwd(), raw);
+  }
 
-  let raw = url.replace(/^file:/, "");
-  if (raw.startsWith("./")) raw = raw.slice(2);
+  // Default path is "dev.db" relative to project root
+  const source = path.resolve(process.cwd(), "dev.db");
 
   if (process.env.NODE_ENV === "production") {
-    const target = path.join(os.tmpdir(), path.basename(raw));
-    const source = path.resolve(process.cwd(), raw);
+    const target = path.join(os.tmpdir(), "dev.db");
     try {
+      // Always try to copy the latest build-time database to /tmp if not already present
       if (!fs.existsSync(target) && fs.existsSync(source)) {
         fs.copyFileSync(source, target);
+        console.log(`Successfully copied database from ${source} to ${target}`);
       }
-    } catch {
-      // ignore copy errors and fall back to target path
+    } catch (err) {
+      console.error("Failed to copy database:", err);
     }
     return target;
   }
 
-  if (path.isAbsolute(raw)) return raw;
-  return path.resolve(process.cwd(), raw);
+  return source;
 }
 
 function createClient() {
