@@ -17,7 +17,7 @@ export async function PATCH(req: Request) {
     if (typeof body.name === "string" && body.name.trim()) {
       data.name = body.name.trim();
     }
-    if (typeof body.theme === "string" && ["dark", "light"].includes(body.theme)) {
+    if (typeof body.theme === "string" && ["dark", "light", "system"].includes(body.theme)) {
       data.theme = body.theme;
     }
     if (typeof body.model === "string") {

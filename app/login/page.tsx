@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,9 +25,7 @@ export default function LoginPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
-            mode === "login"
-              ? { email, password }
-              : { email, password, name }
+            mode === "login" ? { email, password } : { email, password, name }
           ),
         }
       );
@@ -43,38 +41,35 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center px-4">
-      <div className="aura-stage" />
-      <div className="mesh-glow" />
-
+    <div className="login-shell">
       <motion.div
-        className="relative z-10 w-full max-w-md"
-        initial={{ opacity: 0, y: 16 }}
+        className="w-full max-w-[400px]"
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 320, damping: 30 }}
+        transition={{ duration: 0.35 }}
       >
-        <div className="mb-10 text-center">
-          <motion.div
-            className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent)] text-[var(--accent-fg)]"
-            whileHover={{ scale: 1.05, rotate: -3 }}
-            transition={{ type: "spring", stiffness: 400, damping: 18 }}
-          >
-            <Sparkles className="h-5 w-5" />
-          </motion.div>
-          <h1 className="display text-4xl tracking-tight">Aura</h1>
-          <p className="mt-2 text-[14px] text-[var(--fg-muted)]">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-[1.5rem] bg-[var(--surface-container-lowest)] shadow-[0_12px_36px_rgba(0,0,0,0.1)] border border-[var(--outline-variant)]/30">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/construct-icon.svg"
+              alt="Construct"
+              className="h-16 w-16"
+              draggable={false}
+            />
+          </div>
+          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[var(--on-surface)]">
+            Construct
+          </h1>
+          <p className="mt-1.5 text-[14px] text-[var(--on-surface-variant)]">
             {mode === "login"
-              ? "Sign in to your AI workspace"
-              : "Create an account — keep every conversation"}
+              ? "Sign in to your workspace"
+              : "Create an account to keep your work"}
           </p>
         </div>
 
-        <motion.form
-          onSubmit={submit}
-          layout
-          className="glass rounded-[28px] p-7 shadow-[var(--shadow)]"
-        >
-          <AnimatePresence mode="wait">
+        <form onSubmit={submit} className="login-card">
+          <AnimatePresence mode="wait" initial={false}>
             {mode === "register" && (
               <motion.div
                 key="name"
@@ -108,6 +103,7 @@ export default function LoginPage() {
               autoComplete="email"
             />
           </div>
+
           <div className="mb-5">
             <label className="label">Password</label>
             <input
@@ -127,36 +123,30 @@ export default function LoginPage() {
           <AnimatePresence>
             {error && (
               <motion.p
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="mb-4 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-[12px] text-[var(--danger)]"
+                className="mb-4 rounded-lg bg-[var(--error-container)] px-3 py-2 text-[12px] text-[var(--error)]"
               >
                 {error}
               </motion.p>
             )}
           </AnimatePresence>
 
-          <motion.button
-            type="submit"
-            disabled={loading}
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[14px] font-medium text-[var(--accent-fg)] disabled:opacity-60"
-          >
+          <button type="submit" disabled={loading} className="btn-primary w-full">
             {loading
               ? "Please wait…"
               : mode === "login"
                 ? "Sign in"
                 : "Create account"}
             {!loading && <ArrowRight className="h-4 w-4" />}
-          </motion.button>
+          </button>
 
-          <p className="mt-5 text-center text-[13px] text-[var(--fg-muted)]">
+          <p className="mt-5 text-center text-[13px] text-[var(--on-surface-variant)]">
             {mode === "login" ? "New here?" : "Already have an account?"}{" "}
             <button
               type="button"
-              className="font-medium text-[var(--tint)]"
+              className="font-semibold text-[var(--on-surface)] underline-offset-2 hover:underline"
               onClick={() => {
                 setMode(mode === "login" ? "register" : "login");
                 setError(null);
@@ -165,13 +155,7 @@ export default function LoginPage() {
               {mode === "login" ? "Create account" : "Sign in"}
             </button>
           </p>
-        </motion.form>
-
-        <p className="mt-8 text-center text-[11px] leading-relaxed text-[var(--fg-muted)]">
-          Modes · templates · streaming · canvas
-          <br />
-          Built for real work, not retro toys.
-        </p>
+        </form>
       </motion.div>
     </div>
   );

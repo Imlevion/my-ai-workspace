@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Aether Intelligence - AI Canvas</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              keyframes: {
+                'fade-in-up': {
+                  '0%': { opacity: '0', transform: 'translateY(20px)' },
+                  '100%': { opacity: '1', transform: 'translateY(0)' },
+                }
+              },
+              animation: {
+                'fade-in-up': 'fade-in-up 0.5s ease-out forwards',
+              },
+              "colors": {
+                      "error-container": "#ffdad6",
+                      "on-primary-fixed": "#1b1b1d",
+                      "background": "#f9f9fb",
+                      "tertiary-container": "#001c41",
+                      "error": "#ba1a1a",
+                      "primary-container": "#1d1d1f",
+                      "on-error-container": "#93000a",
+                      "on-surface": "#1a1c1d",
+                      "on-secondary-fixed": "#1a1b1f",
+                      "on-secondary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#00458e",
+                      "primary": "#030304",
+                      "on-primary-fixed-variant": "#474649",
+                      "on-secondary-fixed-variant": "#46464b",
+                      "primary-fixed": "#e4e2e4",
+                      "inverse-primary": "#c8c6c8",
+                      "on-tertiary-fixed": "#001b3e",
+                      "on-error": "#ffffff",
+                      "tertiary-fixed-dim": "#aac7ff",
+                      "tertiary-fixed": "#d7e3ff",
+                      "tertiary": "#00030b",
+                      "surface-container-highest": "#e2e2e4",
+                      "surface-dim": "#d9dadc",
+                      "on-background": "#1a1c1d",
+                      "outline-variant": "#c7c6ca",
+                      "surface": "#f9f9fb",
+                      "surface-container-high": "#e8e8ea",
+                      "secondary-fixed": "#e3e2e7",
+                      "surface-tint": "#5f5e60",
+                      "on-tertiary": "#ffffff",
+                      "surface-bright": "#f9f9fb",
+                      "outline": "#77767b",
+                      "surface-variant": "#e2e2e4",
+                      "primary-fixed-dim": "#c8c6c8",
+                      "on-secondary-container": "#626267",
+                      "inverse-on-surface": "#f0f0f2",
+                      "on-tertiary-container": "#3b84eb",
+                      "on-primary": "#ffffff",
+                      "surface-container-low": "#f3f3f5",
+                      "on-primary-container": "#868587",
+                      "surface-container": "#eeeef0",
+                      "on-surface-variant": "#46464a",
+                      "surface-container-lowest": "#ffffff",
+                      "secondary-fixed-dim": "#c7c6cb",
+                      "inverse-surface": "#2f3132",
+                      "secondary-container": "#e0dfe4",
+                      "secondary": "#5e5e63"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "stack-sm": "12px",
+                      "margin-mobile": "20px",
+                      "unit": "8px",
+                      "container-max": "1200px",
+                      "stack-lg": "48px",
+                      "stack-xs": "4px",
+                      "stack-md": "24px",
+                      "margin-desktop": "64px",
+                      "stack-xl": "80px",
+                      "gutter": "24px"
+              },
+              "fontFamily": {
+                      "display-lg": ["Inter"],
+                      "label-md": ["Inter"],
+                      "headline-md": ["Inter"],
+                      "headline-xl": ["Inter"],
+                      "headline-lg": ["Inter"],
+                      "display-lg-mobile": ["Inter"],
+                      "body-md": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "label-sm": ["Inter"]
+              },
+              "fontSize": {
+                      "display-lg": ["64px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                      "label-md": ["14px", {"lineHeight": "1.4", "letterSpacing": "0.01em", "fontWeight": "500"}],
+                      "headline-md": ["24px", {"lineHeight": "1.3", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                      "headline-xl": ["40px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "headline-lg": ["32px", {"lineHeight": "1.25", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "display-lg-mobile": ["40px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "body-md": ["16px", {"lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400"}],
+                      "body-lg": ["19px", {"lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400"}],
+                      "label-sm": ["12px", {"lineHeight": "1.4", "letterSpacing": "0.02em", "fontWeight": "600"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        /* Ambient Shadows */
+        .ambient-shadow-sm { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02), 0 2px 4px -1px rgba(0,0,0,0.01); }
+        .ambient-shadow-md { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.03), 0 4px 6px -2px rgba(0,0,0,0.02); }
+        .ambient-shadow-lg { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.04), 0 10px 10px -5px rgba(0,0,0,0.02); }
+        
+        /* Node Connections */
+        .node-connection {
+            position: absolute;
+            background-color: rgba(199, 198, 202, 0.4); /* subtle outline-variant */
+            height: 1px;
+            z-index: 0;
+            transform-origin: left center;
+        }
+
+        /* Canvas Pattern */
+        .canvas-bg {
+            background-image: radial-gradient(theme('colors.surface-dim') 1px, transparent 1px);
+            background-size: 24px 24px;
+            background-position: -12px -12px;
+        }
+        
+        /* Hide scrollbar for clean canvas feel */
+        ::-webkit-scrollbar {
+            width: 0px;
+            height: 0px;
+        }
+    </style>
+</head>
+<body class="bg-transparent text-on-surface font-body-md overflow-hidden h-screen w-screen relative">
+<!-- Top Navigation (Shared Component) -->
+<header class="fixed top-0 right-0 left-24 h-16 bg-white/5 backdrop-blur-xl border-b border-white/10 z-50 flex justify-between items-center px-10 w-full backdrop-blur-3xl transition-all duration-500">
+<div class="flex items-center gap-8">
+<h1 class="font-headline-lg text-headline-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Aether Intelligence</h1>
+<nav class="hidden md:flex items-center gap-6">
+<!-- Active State -->
+<a class="font-body-md text-body-md text-primary font-bold border-b-2 border-primary pb-1" href="#">Collaborate</a>
+<!-- Inactive States -->
+<a class="font-body-md text-body-md text-on-surface/80 hover:text-secondary-fixed transition-colors" href="#">Focus Mode</a>
+<a class="font-body-md text-body-md text-on-surface/80 hover:text-secondary-fixed transition-colors" href="#">History</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface/80 hover:text-secondary-fixed transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface/80 hover:text-secondary-fixed transition-colors">
+<span class="material-symbols-outlined">auto_awesome</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden border border-outline-variant">
+<img alt="User avatar" class="w-full h-full object-cover" data-alt="A minimalist, monochromatic portrait of a sophisticated user in high-key studio lighting, representing a modern avatar. Crisp focus, ultra-clean aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBc2FC5at0cZkUiIkRKubKNYr2owXx4PDYY8HRr5T8kyMRrhHGkEMqWLoHk-IAi4oYlufpMk2adxi5-GFFerS--8opjVj79X8mKOoKw9WoPkiOtUvwCvBqN6rz-Z3D1xIknixbyyKHaD4VioQ3QNuHqEg9HJmNbRCWgZD8TAVJk6VhPWoXStbOrszBL_LkuZPb7DYPYrjk7pmcnMY-aEoGM2KVUD-cL7h3babOF62SGZD1PnEzd2W_9"/>
+</div>
+</div>
+</header>
+<!-- Side Navigation (Shared Component) -->
+<nav class="fixed left-4 top-4 bottom-4 w-20 rounded-xl bg-white/5 backdrop-blur-xl border border-white/15 shadow-2xl z-50 flex flex-col items-center py-8 gap-y-6">
+<!-- Active State -->
+<a class="bg-primary/20 text-primary-fixed-dim rounded-lg scale-110 shadow-[0_0_15px_rgba(160,120,255,0.3)] w-12 h-12 flex items-center justify-center transition-all duration-300" href="#">
+<span class="material-symbols-outlined">space_dashboard</span>
+</a>
+<!-- Inactive States -->
+<a class="text-on-surface-variant/70 hover:bg-white/10 hover:text-primary transition-all duration-300 ease-in-out hover:-translate-y-0.5 w-12 h-12 flex items-center justify-center rounded-lg" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+</a>
+<a class="text-on-surface-variant/70 hover:bg-white/10 hover:text-primary transition-all duration-300 ease-in-out hover:-translate-y-0.5 w-12 h-12 flex items-center justify-center rounded-lg" href="#">
+<span class="material-symbols-outlined">hub</span>
+</a>
+<a class="text-on-surface-variant/70 hover:bg-white/10 hover:text-primary transition-all duration-300 ease-in-out hover:-translate-y-0.5 w-12 h-12 flex items-center justify-center rounded-lg" href="#">
+<span class="material-symbols-outlined">insights</span>
+</a>
+<div class="mt-auto">
+<a class="text-on-surface-variant/70 hover:bg-white/10 hover:text-primary transition-all duration-300 ease-in-out hover:-translate-y-0.5 w-12 h-12 flex items-center justify-center rounded-lg" href="#">
+<span class="material-symbols-outlined">settings</span>
+</a>
+</div>
+</nav>
+<!-- Main Spatial Canvas -->
+<main class="absolute inset-0 pt-16 pl-24 overflow-auto bg-transparent cursor-grab active:cursor-grabbing" id="canvas-area">
+<!-- STITCH_SHADER_START:ANIMATION_38 class="fixed inset-0 w-full h-full -z-10" -->
+<div class="fixed inset-0 w-full h-full -z-10" style="display:block;">
+<canvas id="shader-canvas-ANIMATION_38" style="display:block;width:100%;height:100%"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-ANIMATION_38');
+
+  // Sync the WebGL drawing-buffer size with the CSS-driven layout size.
+  // This fires on initial layout and whenever the element is resized.
+  function syncSize() {
+    const w = canvas.clientWidth  || 1280;
+    const h = canvas.clientHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncSize).observe(canvas);
+  }
+  syncSize();
+
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+varying vec2 v_texCoord;
+uniform float u_time;
+uniform vec2 u_resolution;
+
+void main() {
+    vec2 uv = v_texCoord;
+    
+    // Create a subtle, slow-moving grain/noise texture for the canvas
+    float n = fract(sin(dot(uv + u_time * 0.01, vec2(12.9898, 78.233))) * 43758.5453);
+    
+    // Background color: off-white/very light gray from Ethos Precision
+    vec3 color = vec3(0.97, 0.97, 0.98); 
+    
+    // Grid lines (very subtle)
+    vec2 grid = fract(uv * 40.0);
+    float line = smoothstep(0.0, 0.02, grid.x) * smoothstep(1.0, 0.98, grid.x) *
+                 smoothstep(0.0, 0.02, grid.y) * smoothstep(1.0, 0.98, grid.y);
+    
+    // Blend grid and noise
+    color = mix(color * 0.99, color, line);
+    color += n * 0.015;
+    
+    gl_FragColor = vec4(color, 1.0);
+}`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+  // u_mouse is in pixel coordinates matching u_resolution (ShaderToy convention).
+  // Shaders that need normalized coords should use: u_mouse / u_resolution.
+  let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+  window.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const nx = (event.clientX - rect.left) / rect.width;
+      const ny = 1.0 - (event.clientY - rect.top) / rect.height;
+      mouse.x = nx * canvas.width;
+      mouse.y = ny * canvas.height;
+    }
+  });
+
+  function render(t) {
+    if (typeof ResizeObserver === 'undefined') syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+</div>
+<!-- STITCH_SHADER_END:ANIMATION_38 -->
+<!-- Connection Lines (Visual Mockup) -->
+<div class="node-connection" style="top: 300px; left: 450px; width: 150px; transform: rotate(15deg);"></div>
+<div class="node-connection" style="top: 350px; left: 880px; width: 120px; transform: rotate(-5deg);"></div>
+<!-- Node 1: Prompt Card -->
+<div class="absolute top-[200px] left-[150px] w-80 bg-surface rounded-xl p-6 ambient-shadow-md border border-outline-variant/30 hover:border-outline-variant/60 transition-colors z-10 cursor-default animate-fade-in-up">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">Core Concept</span>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">more_horiz</span>
+</button>
+</div>
+<p class="font-body-md text-body-md text-on-surface mb-4">
+                Develop a unified design system architecture that bridges structural rigidity with fluid organic forms, focusing on high-contrast monochromatic palettes.
+            </p>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-container-low rounded text-label-sm font-label-sm text-on-surface-variant">Architecture</span>
+<span class="px-2 py-1 bg-surface-container-low rounded text-label-sm font-label-sm text-on-surface-variant">Design System</span>
+</div>
+</div>
+<!-- Node 2: Generated Code Card -->
+<div class="absolute top-[260px] left-[580px] w-96 bg-surface-container-lowest rounded-xl p-0 ambient-shadow-lg border border-outline-variant/40 z-20 overflow-hidden flex flex-col cursor-default animate-fade-in-up" style="animation-delay: 100ms;">
+<div class="bg-surface-container px-4 py-3 flex items-center justify-between border-b border-outline-variant/30">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary-container" style="font-variation-settings: 'FILL' 1;">code</span>
+<span class="font-label-sm text-label-sm text-on-surface">DesignTokens.ts</span>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">content_copy</span>
+</button>
+</div>
+<div class="p-4 bg-primary text-on-primary font-mono text-sm overflow-x-auto">
+<pre><code>export const tokens = {
+  colors: {
+    primary: '#030304',
+    surface: '#F5F5F7',
+    border: '#D2D2D7'
+  },
+  spacing: {
+    base: '8px',
+    stack: '24px'
+  }
+};</code></pre>
+</div>
+</div>
+<!-- Node 3: Generated Image Card -->
+<div class="absolute top-[180px] left-[1000px] w-80 bg-surface rounded-xl p-3 ambient-shadow-lg border border-outline-variant/20 z-10 cursor-default animate-fade-in-up" style="animation-delay: 200ms;">
+<div class="relative w-full h-48 rounded-lg overflow-hidden mb-3">
+<img alt="Generated Concept" class="w-full h-full object-cover" data-alt="A highly detailed architectural rendering of a minimalist structure blending rigid geometric shapes with fluid, organic curves. The scene is illuminated by soft, high-key studio lighting, emphasizing stark black and white contrasts. Premium, clean aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQ96C8JVM2jCfK9h4lIy9SdlFIbGADX8sQGEIB9iGKBZXVYQtDZeN9Ro65e0UHlBWM5AGCfIY867EcclYDaEyd1d8r5ZeX5rTcmUX0PNzyiHMNoJNOgjaTO3xrwfjMfjF3_jjjHWwuCHJUsf5n6KXyaIGQEIltlbvAyYCHr3MGtCeUXtsbI1z5cOowGMjoAYbbp-UQeN2GikFjYkmWzmwICrRkNsqRmxyqElTilMen6rpcngZ3Od2v"/>
+<div class="absolute top-2 right-2 bg-primary/80 backdrop-blur text-on-primary px-2 py-1 rounded font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined" style="font-size: 14px;">image</span>
+                    v2.1
+                </div>
+</div>
+<div class="px-2 pb-2">
+<p class="font-label-sm text-label-sm text-on-surface-variant">Visual interpretation of fluid rigidity.</p>
+</div>
+</div>
+</main>
+<!-- Contextual Assistant Panel (Right Side) -->
+<aside class="fixed right-6 top-24 bottom-24 w-80 bg-white/40 backdrop-blur-2xl rounded-2xl border border-white/20 ambient-shadow-lg shadow-2xl z-40 flex flex-col overflow-hidden transition-transform duration-300 translate-x-0">
+<div class="p-5 border-b border-outline-variant/20 flex justify-between items-center bg-surface/50">
+<h2 class="font-headline-md text-headline-md text-on-surface">Assistant</h2>
+<button class="text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="flex-1 p-5 overflow-y-auto flex flex-col gap-4">
+<div class="bg-surface-container-low p-4 rounded-lg rounded-tl-none self-start max-w-[85%] shadow-sm">
+<p class="font-body-md text-body-md text-on-surface">I've generated the base design tokens. Should we expand this to include typography scales?</p>
+</div>
+<div class="bg-primary text-on-primary p-4 rounded-lg rounded-tr-none self-end max-w-[85%] shadow-sm">
+<p class="font-body-md text-body-md">Yes, use the Inter font family with an 8px baseline.</p>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant/50 self-start mt-2">
+<span class="material-symbols-outlined animate-pulse" style="font-size: 16px;">more_horiz</span>
+</div>
+</div>
+<div class="p-4 border-t border-outline-variant/20 bg-surface/50">
+<div class="relative">
+<input class="w-full bg-surface-container-lowest/80 border border-outline-variant/50 rounded-lg py-3 pl-4 pr-10 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-body-md text-body-md text-on-surface placeholder:text-outline backdrop-blur-md" placeholder="Ask follow up..." type="text"/>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:text-primary-fixed-variant transition-colors p-1">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">send</span>
+</button>
+</div>
+</div>
+</aside>
+<!-- Floating Toolbar (Bottom Center) -->
+<div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white/40 backdrop-blur-xl border border-white/20 rounded-full px-6 py-3 flex items-center gap-6 shadow-2xl z-50">
+<button class="flex flex-col items-center gap-1 group">
+<div class="w-10 h-10 rounded-full bg-surface-container/80 flex items-center justify-center group-hover:bg-primary group-hover:text-on-primary group-hover:scale-110 transition-all duration-300">
+<span class="material-symbols-outlined">add_comment</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors">Prompt</span>
+</button>
+<div class="w-px h-8 bg-outline-variant/30"></div>
+<button class="flex flex-col items-center gap-1 group">
+<div class="w-10 h-10 rounded-full bg-surface-container/80 flex items-center justify-center group-hover:bg-primary group-hover:text-on-primary group-hover:scale-110 transition-all duration-300">
+<span class="material-symbols-outlined">image</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors">Image</span>
+</button>
+<button class="flex flex-col items-center gap-1 group">
+<div class="w-10 h-10 rounded-full bg-surface-container/80 flex items-center justify-center group-hover:bg-primary group-hover:text-on-primary group-hover:scale-110 transition-all duration-300">
+<span class="material-symbols-outlined">code</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors">Code</span>
+</button>
+<button class="flex flex-col items-center gap-1 group">
+<div class="w-10 h-10 rounded-full bg-surface-container/80 flex items-center justify-center group-hover:bg-primary group-hover:text-on-primary group-hover:scale-110 transition-all duration-300">
+<span class="material-symbols-outlined">analytics</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors">Data</span>
+</button>
+<div class="w-px h-8 bg-outline-variant/30"></div>
+<button class="flex flex-col items-center gap-1 group">
+<div class="w-10 h-10 rounded-full bg-surface-container/80 flex items-center justify-center group-hover:bg-surface-variant group-hover:scale-110 transition-all duration-300 text-outline">
+<span class="material-symbols-outlined">tune</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors">Canvas</span>
+</button>
+</div>
+</body></html>

@@ -143,5 +143,5 @@ export function MarkdownBody({ text }: { text: string }) {
     );
   }
 
-  return <div className="msg-prose">{nodes}</div>;
+  return <div className="msg-prose min-w-0 max-w-full overflow-hidden">{nodes}</div>;
 }

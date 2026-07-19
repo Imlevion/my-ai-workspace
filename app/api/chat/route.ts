@@ -80,10 +80,22 @@ export async function POST(req: Request) {
       },
     });
 
+    const customMemory = typeof body.customMemory === "string" ? body.customMemory.trim() : "";
+    const uiLanguage = body.uiLanguage === "id" ? "id" : "en";
+    const langLine =
+      uiLanguage === "id"
+        ? "Always respond in Bahasa Indonesia unless the user explicitly asks for another language. Keep technical terms clear; code and identifiers stay in their original form."
+        : "Always respond in English unless the user explicitly asks for another language. Keep technical terms clear; code and identifiers stay in their original form.";
+    const basePrompt = buildSystemPrompt(user.systemPrompt, mode);
+    let systemPromptContent = `${basePrompt}\n\n[Language]:\n${langLine}`;
+    if (customMemory) {
+      systemPromptContent += `\n\n[User Memory Context]:\nRemember this context about the user for the assistant's responses:\n${customMemory}`;
+    }
+
     const payloadMessages = [
       {
         role: "system",
-        content: buildSystemPrompt(user.systemPrompt, mode),
+        content: systemPromptContent,
       },
       ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content },

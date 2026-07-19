@@ -8,9 +8,11 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Stable order: pinned first, then by creation time (not last message).
+  // Prevents history list from reshuffling every send.
   const chats = await prisma.chat.findMany({
     where: { userId: user.id },
-    orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+    orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
     select: {
       id: true,
       title: true,
