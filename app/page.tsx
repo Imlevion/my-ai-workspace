@@ -80,7 +80,6 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   WORK_MODES,
   PROBLEM_TEMPLATES,
-  QUICK_TOOLS,
   DEFAULT_AGENTS,
   extractCodeBlocks,
   stripCodeBlocks,
@@ -399,10 +398,14 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setFontSize((localStorage.getItem("aura-font-size") as any) || "base");
-    setFontFamily((localStorage.getItem("aura-font-family") as any) || "sans");
-    setChatDensity((localStorage.getItem("aura-chat-density") as any) || "cozy");
-    setTopP(Number(localStorage.getItem("aura-top-p") || "0.9"));
+    const fontSize = (localStorage.getItem("aura-font-size") as "sm" | "base" | "lg" | "xl") || "base";
+    const fontFamily = (localStorage.getItem("aura-font-family") as "sans" | "mono" | "serif") || "sans";
+    const chatDensity = (localStorage.getItem("aura-chat-density") as "cozy" | "compact") || "cozy";
+    const topP = Number(localStorage.getItem("aura-top-p") || "0.9");
+    setFontSize(fontSize);
+    setFontFamily(fontFamily);
+    setChatDensity(chatDensity);
+    setTopP(topP);
     setAutoRead(localStorage.getItem("aura-auto-read") === "true");
     setTtsVoice(localStorage.getItem("aura-tts-voice") || "");
     setWordWrap(localStorage.getItem("aura-word-wrap") !== "false");
@@ -475,7 +478,8 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setToolsAllowed(localStorage.getItem("aura-tools-allowed") !== "false");
+    const toolsAllowed = localStorage.getItem("aura-tools-allowed") !== "false";
+    setToolsAllowed(toolsAllowed);
   }, []);
 
   const activeChat = useMemo(
@@ -506,8 +510,6 @@ export default function Home() {
     [messages]
   );
 
-  const activeCode =
-    allCodes.find((c) => c.id === activeCodeId) || allCodes[0] || null;
 
   const followUps = useMemo(() => {
     const last = [...messages].reverse().find((m) => m.role === "assistant");
@@ -536,7 +538,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!visibleTemplates.some((t) => t.id === previewTemplateId)) {
-      setPreviewTemplateId(visibleTemplates[0]?.id ?? null);
+      const newTemplateId = visibleTemplates[0]?.id ?? null;
+      setPreviewTemplateId(newTemplateId);
     }
   }, [visibleTemplates, previewTemplateId]);
 
@@ -587,7 +590,7 @@ export default function Home() {
     setPromptDraft(u.systemPrompt || DEFAULT_SYSTEM_PROMPT);
     setEnterDraft(u.sendWithEnter ?? true);
     setCanvasDraft(u.showCanvas ?? true);
-    setThemeDraft((u.theme as any) || "light");
+    setThemeDraft((u.theme as "dark" | "light" | "system") || "light");
     applyTheme(u.theme || "light");
     setThemeCookie(u.theme || "light");
   }
@@ -818,12 +821,15 @@ export default function Home() {
     setPromptDraft(user.systemPrompt || DEFAULT_SYSTEM_PROMPT);
     setEnterDraft(user.sendWithEnter);
     setCanvasDraft(user.showCanvas);
-    setThemeDraft((user.theme as any) || "light");
+    setThemeDraft((user.theme as "dark" | "light" | "system") || "light");
     applyTheme(user.theme || "light");
     if (typeof window !== "undefined") {
-      setFontSize((localStorage.getItem("aura-font-size") as any) || "base");
-      setFontFamily((localStorage.getItem("aura-font-family") as any) || "sans");
-      setChatDensity((localStorage.getItem("aura-chat-density") as any) || "cozy");
+      const fontSize = (localStorage.getItem("aura-font-size") as "sm" | "base" | "lg" | "xl") || "base";
+      const fontFamily = (localStorage.getItem("aura-font-family") as "sans" | "mono" | "serif") || "sans";
+      const chatDensity = (localStorage.getItem("aura-chat-density") as "cozy" | "compact") || "cozy";
+      setFontSize(fontSize);
+      setFontFamily(fontFamily);
+      setChatDensity(chatDensity);
       setTopP(Number(localStorage.getItem("aura-top-p") || "0.9"));
       setAutoRead(localStorage.getItem("aura-auto-read") === "true");
       setTtsVoice(localStorage.getItem("aura-tts-voice") || "");
@@ -902,7 +908,7 @@ export default function Home() {
       setActiveId(chat.id);
       setMessages([]);
       showToast(i.allChatsCleared);
-    } catch (e) {
+    } catch {
       showToast(i.failedClearChats);
     } finally {
       setSaving(false);
@@ -3842,7 +3848,7 @@ ${bodyHtml}
                   className="btn-ghost"
                   onClick={() => {
                     if (user) {
-                      setThemeDraft((user.theme as any) || "light");
+                      setThemeDraft((user.theme as "dark" | "light" | "system") || "light");
                       applyTheme(user.theme || "light");
                     }
                     setSheet("none");
