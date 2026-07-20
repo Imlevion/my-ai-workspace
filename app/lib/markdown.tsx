@@ -45,10 +45,27 @@ export function MarkdownBody({ text }: { text: string }) {
       continue;
     }
 
-    // headings
+    // headings — agent pipeline sections get a card-style header
     const h = line.match(/^(#{1,3})\s+(.+)$/);
     if (h) {
       const level = h[1].length;
+      const title = h[2];
+      // ### Architect  /  ## Multi-agent pipeline
+      const isAgentSection =
+        level >= 2 &&
+        /^(Architect|Builder|Reviewer|Researcher|Editor|Planner|Agent)\b/i.test(
+          title.replace(/\*+/g, "").trim()
+        );
+      if (isAgentSection) {
+        nodes.push(
+          <div key={key++} className="agent-md-heading">
+            <span className="agent-md-dot" aria-hidden />
+            <span className="agent-md-title">{renderInline(title)}</span>
+          </div>
+        );
+        i += 1;
+        continue;
+      }
       const cls =
         level === 1
           ? "mt-4 mb-2 text-[18px] font-semibold tracking-tight"
@@ -57,7 +74,7 @@ export function MarkdownBody({ text }: { text: string }) {
             : "mt-2.5 mb-1 text-[14px] font-semibold";
       nodes.push(
         <p key={key++} className={cls}>
-          {renderInline(h[2])}
+          {renderInline(title)}
         </p>
       );
       i += 1;

@@ -73,6 +73,9 @@ import {
   UsersRound,
   StickyNote,
   Bot,
+  Layout,
+  Briefcase,
+  GraduationCap,
 } from "lucide-react";
 import {
   ACCEPTED_MEDIA,
@@ -81,6 +84,9 @@ import {
   WORK_MODES,
   PROBLEM_TEMPLATES,
   DEFAULT_AGENTS,
+  MAX_AGENTS,
+  createAgentSlot,
+  composeTemplateMessage,
   extractCodeBlocks,
   stripCodeBlocks,
   formatBytes,
@@ -93,6 +99,8 @@ import {
   extractCanvasPayload,
   type WorkModeId,
   type AgentRoleDef,
+  type ProblemTemplate,
+  type TemplateKind,
 } from "./lib/models";
 import { MarkdownBody } from "./lib/markdown";
 import {
@@ -296,6 +304,19 @@ const MODE_ICONS: Record<
   ListTree,
 };
 
+const TEMPLATE_KIND_ICONS: Record<
+  TemplateKind,
+  React.ComponentType<{ className?: string }>
+> = {
+  website: Monitor,
+  analyze: BarChart3,
+  code: Code2,
+  writing: PenLine,
+  product: Layout,
+  work: Briefcase,
+  learning: GraduationCap,
+};
+
 function fileKind(name: string): AttachFile["kind"] {
   const e = name.split(".").pop()?.toLowerCase() || "";
   if (
@@ -372,13 +393,15 @@ export default function Home() {
   const [toolsAllowed, setToolsAllowed] = useState(true);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
 
-  // Multi-agent collaborate
+  // Multi-agent collaborate (capped at available provider models)
   const [agents, setAgents] = useState<AgentRoleDef[]>(() =>
-    DEFAULT_AGENTS.map((a) => ({ ...a, task: "", enabled: true }))
+    DEFAULT_AGENTS.map((a) => ({ ...a, task: a.task || "", enabled: true }))
   );
   const [multiAgentEnabled, setMultiAgentEnabled] = useState(true);
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
   const [activeAgentLabel, setActiveAgentLabel] = useState<string | null>(null);
+  const [globalDrag, setGlobalDrag] = useState(false);
+  const dragDepthRef = useRef(0);
 
   // Focus mode: floating assets + technical canvas
   const [focusAssets, setFocusAssets] = useState<
@@ -509,6 +532,18 @@ export default function Home() {
       ),
     [messages]
   );
+
+  /** Codes for live preview — messages + Focus canvas (template scaffolds) */
+  const previewCodes = useMemo(() => {
+    const fromCanvas = focusCanvasText
+      ? extractCodeBlocks(focusCanvasText)
+      : [];
+    if (!fromCanvas.length) return allCodes;
+    // Prefer newest canvas scaffolds when previewing templates before a reply
+    const seen = new Set(allCodes.map((c) => c.code.slice(0, 80)));
+    const extra = fromCanvas.filter((c) => !seen.has(c.code.slice(0, 80)));
+    return [...allCodes, ...extra];
+  }, [allCodes, focusCanvasText]);
 
 
   const followUps = useMemo(() => {
@@ -655,6 +690,49 @@ export default function Home() {
   useEffect(() => {
     bootstrap();
   }, [bootstrap]);
+
+  // Global drag-and-drop from outside the browser (desktop files)
+  useEffect(() => {
+    function hasFiles(e: DragEvent) {
+      return Array.from(e.dataTransfer?.types || []).includes("Files");
+    }
+    function onDragEnter(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepthRef.current += 1;
+      setGlobalDrag(true);
+    }
+    function onDragOver(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    }
+    function onDragLeave(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setGlobalDrag(false);
+    }
+    function onDrop(e: DragEvent) {
+      e.preventDefault();
+      dragDepthRef.current = 0;
+      setGlobalDrag(false);
+      if (e.dataTransfer?.files?.length) {
+        ingestFiles(e.dataTransfer.files);
+      }
+    }
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     listRef.current?.scrollTo({
@@ -1029,11 +1107,14 @@ export default function Home() {
       viewTab === "collaborate" && multiAgentEnabled
         ? agents
             .filter((a) => a.enabled !== false)
+            .slice(0, MAX_AGENTS)
             .map((a) => ({
               id: a.id,
               name: a.name,
               model: a.model,
               role: a.role,
+              deliverable: a.deliverable,
+              defaultTask: a.defaultTask,
               task: a.task || "",
             }))
         : [];
@@ -1146,7 +1227,13 @@ export default function Home() {
                 );
               }
               if (evt.type === "agent_start" && evt.agent?.name) {
-                setActiveAgentLabel(evt.agent.name);
+                const total = evt.agent.total || agents.length || 1;
+                const idx =
+                  typeof evt.agent.index === "number" ? evt.agent.index + 1 : 1;
+                const role = evt.agent.role ? ` · ${evt.agent.role}` : "";
+                setActiveAgentLabel(
+                  `${evt.agent.name}${role} (${idx}/${total})`
+                );
               }
               if (evt.type === "delta" && evt.content) {
                 streamed += evt.content;
@@ -1247,23 +1334,55 @@ export default function Home() {
       return;
     const arr = Array.from(list as FileList);
     const next: AttachFile[] = [];
+    let skipped = 0;
     for (const file of arr) {
-      if (file.size > 400_000) {
-        setError(`${file.name} is too large (max ~400KB text).`);
+      const isImage = file.type.startsWith("image/");
+      const maxBytes = isImage ? 2_000_000 : 400_000;
+      if (file.size > maxBytes) {
+        skipped += 1;
+        setError(
+          i.fileTooLarge
+            .replace("{name}", file.name)
+            .replace("{max}", isImage ? "2MB" : "400KB")
+        );
         continue;
       }
-      const text = await file.text();
+      let text = "";
+      if (isImage) {
+        // Images: attach as data-URL note so the model still sees context
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read failed"));
+          reader.readAsDataURL(file);
+        }).catch(() => "");
+        text = dataUrl
+          ? `[Image attached: ${file.name} · ${formatBytes(file.size)}]\n${dataUrl.slice(0, 200)}…\n(Describe this image context for the assistant.)`
+          : `[Image attached: ${file.name}]`;
+      } else {
+        text = await file.text();
+      }
       next.push({
-        id: `${file.name}-${file.size}-${Date.now()}`,
+        id: `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         name: file.name,
         text,
         size: file.size,
-        kind: fileKind(file.name),
+        kind: isImage ? "other" : fileKind(file.name),
       });
     }
-    setFiles((prev) => [...prev, ...next]);
+    if (next.length) {
+      setFiles((prev) => [...prev, ...next]);
+      showToast(
+        next.length === 1
+          ? i.fileAttachedOne.replace("{name}", next[0].name)
+          : i.fileAttachedMany.replace("{n}", String(next.length))
+      );
+    } else if (!skipped) {
+      showToast(i.noFilesAdded);
+    }
     if (fileRef.current) fileRef.current.value = "";
-    showToast(`${next.length} file attached`);
+    if (photoRef.current) photoRef.current.value = "";
+    if (cameraRef.current) cameraRef.current.value = "";
   }
 
   async function copyText(text: string, openCanvasOnFocus = false) {
@@ -1286,13 +1405,27 @@ export default function Home() {
     showToast(i.injectToCanvas);
   }
 
-  function applyTemplate(t: (typeof PROBLEM_TEMPLATES)[number]) {
+  function applyTemplate(t: ProblemTemplate) {
     setMode(t.mode);
-    setInput(t.prompt);
+    setInput(composeTemplateMessage(t));
     setSheet("none");
     setAssistantOpen(true);
+    if (t.openCanvas || t.kind === "website" || t.kind === "code") {
+      const canvasBody =
+        t.kind === "website"
+          ? `\`\`\`html\n${t.scaffold}\n\`\`\``
+          : `\`\`\`markdown\n${t.scaffold}\n\`\`\``;
+      setFocusCanvasText(canvasBody);
+      setFocusCanvasOpen(true);
+      if (t.kind === "website") {
+        setViewTab("focus");
+        // Live preview uses canvas HTML immediately (before any assistant reply)
+        setShowPreview(true);
+        setActiveCodeId(null);
+      }
+    }
     showToast(i.templateApplied);
-    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 80);
   }
 
   function updateAgent(id: string, patch: Partial<AgentRoleDef>) {
@@ -1302,24 +1435,22 @@ export default function Home() {
   }
 
   function addAgent() {
-    const n = agents.length + 1;
-    const model = GROQ_MODELS[n % GROQ_MODELS.length].id;
-    setAgents((prev) => [
-      ...prev,
-      {
-        id: `agent-${Date.now()}`,
-        name: `Agent ${n}`,
-        model,
-        role: "Contribute a specialized perspective on the user request.",
-        task: "",
-        enabled: true,
-        color: ["#a78bfa", "#f472b6", "#38bdf8", "#fb923c"][n % 4],
-      },
-    ]);
+    if (agents.length >= MAX_AGENTS) {
+      showToast(i.agentLimitReached.replace("{n}", String(MAX_AGENTS)));
+      return;
+    }
+    const slot = createAgentSlot(agents);
+    if (!slot) {
+      showToast(i.agentLimitReached.replace("{n}", String(MAX_AGENTS)));
+      return;
+    }
+    setAgents((prev) => [...prev, slot]);
   }
 
   function removeAgent(id: string) {
-    setAgents((prev) => (prev.length <= 1 ? prev : prev.filter((a) => a.id !== id)));
+    setAgents((prev) =>
+      prev.length <= 1 ? prev : prev.filter((a) => a.id !== id)
+    );
   }
 
   const cmdItems = useMemo(() => {
@@ -1606,6 +1737,34 @@ export default function Home() {
                   >
                     {i.startChatting}
                   </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => setSheet("templates")}
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                    {i.templates}
+                  </button>
+                </div>
+                <div className="empty-template-row">
+                  {PROBLEM_TEMPLATES.filter((t) =>
+                    ["website-landing", "analyze-metrics", "code-debug", "product-prd"].includes(
+                      t.id
+                    )
+                  ).map((t) => {
+                    const Icon = TEMPLATE_KIND_ICONS[t.kind] || FileText;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className="empty-template-chip"
+                        onClick={() => applyTemplate(t)}
+                      >
+                        <Icon className="h-3.5 w-3.5 shrink-0" />
+                        <span>{t.title}</span>
+                      </button>
+                    );
+                  })}
                 </div>
                 {!user.hasApiKey && (
                   <button
@@ -1917,7 +2076,7 @@ export default function Home() {
                       </p>
                       <p className="text-[11px] text-[var(--on-surface-variant)] leading-snug">
                         {multiAgentEnabled
-                          ? `${agents.filter((a) => a.enabled !== false).length} agents · ${i.multiAgentOn}`
+                          ? `${agents.filter((a) => a.enabled !== false).length}/${MAX_AGENTS} · ${i.multiAgentOn}`
                           : i.agentTeamHint}
                       </p>
                     </div>
@@ -1934,7 +2093,17 @@ export default function Home() {
                         type="button"
                         className="btn-ghost !h-8 !px-2.5 text-[12px]"
                         onClick={addAgent}
-                        disabled={!multiAgentEnabled}
+                        disabled={
+                          !multiAgentEnabled || agents.length >= MAX_AGENTS
+                        }
+                        title={
+                          agents.length >= MAX_AGENTS
+                            ? i.agentLimitReached.replace(
+                                "{n}",
+                                String(MAX_AGENTS)
+                              )
+                            : i.addAgent
+                        }
                       >
                         <Plus className="h-3.5 w-3.5" />
                         {i.addAgent}
@@ -1942,26 +2111,39 @@ export default function Home() {
                     )}
                   </div>
                 </div>
+
+                {agentPanelOpen && multiAgentEnabled && (
+                  <p className="agent-pipeline-hint">
+                    {i.agentPipelineHint.replace("{n}", String(MAX_AGENTS))}
+                  </p>
+                )}
+
                 {agentPanelOpen &&
                   multiAgentEnabled &&
-                  agents.map((agent) => (
+                  agents.map((agent, idx) => (
                     <div
                       key={agent.id}
                       className={`agent-row ${agent.enabled === false ? "disabled" : ""}`}
                     >
-                      <span
-                        className="agent-dot"
-                        style={{ background: agent.color || "var(--primary)" }}
-                      />
+                      <div className="agent-step">
+                        <span
+                          className="agent-dot"
+                          style={{
+                            background: agent.color || "var(--primary)",
+                          }}
+                        />
+                        <span className="agent-step-num">{idx + 1}</span>
+                      </div>
                       <div className="agent-meta">
                         <div className="agent-name-row">
-                          <Bot className="h-3.5 w-3.5 text-[var(--on-surface-variant)]" />
+                          <Bot className="h-3.5 w-3.5 text-[var(--on-surface-variant)] shrink-0" />
                           <input
                             className="agent-name bg-transparent outline-none min-w-0 flex-1"
                             value={agent.name}
                             onChange={(e) =>
                               updateAgent(agent.id, { name: e.target.value })
                             }
+                            aria-label={i.agentName}
                           />
                           <select
                             className="agent-model-select"
@@ -1969,6 +2151,7 @@ export default function Home() {
                             onChange={(e) =>
                               updateAgent(agent.id, { model: e.target.value })
                             }
+                            aria-label={i.aiModel}
                           >
                             {GROQ_MODELS.map((m) => (
                               <option key={m.id} value={m.id}>
@@ -1977,10 +2160,18 @@ export default function Home() {
                             ))}
                           </select>
                         </div>
+                        <p className="agent-role-line" title={agent.deliverable}>
+                          <span className="agent-role-badge">{agent.role}</span>
+                          <span className="agent-deliverable">
+                            {agent.deliverable}
+                          </span>
+                        </p>
                         <textarea
                           className="agent-task-input"
-                          rows={1}
-                          placeholder={i.agentTaskPlaceholder}
+                          rows={2}
+                          placeholder={
+                            agent.defaultTask || i.agentTaskPlaceholder
+                          }
                           value={agent.task || ""}
                           onChange={(e) =>
                             updateAgent(agent.id, { task: e.target.value })
@@ -2360,11 +2551,11 @@ export default function Home() {
 
       {/* Live Preview Panel */}
       <AnimatePresence>
-        {showPreview && allCodes.length > 0 && (() => {
-          // Build combined HTML document from code blocks
-          const htmlBlocks = allCodes.filter((c) => c.lang === "html" || c.lang === "htm");
-          const cssBlocks = allCodes.filter((c) => c.lang === "css");
-          const jsBlocks = allCodes.filter(
+        {showPreview && previewCodes.length > 0 && (() => {
+          // Build combined HTML document from code blocks (+ canvas scaffolds)
+          const htmlBlocks = previewCodes.filter((c) => c.lang === "html" || c.lang === "htm");
+          const cssBlocks = previewCodes.filter((c) => c.lang === "css");
+          const jsBlocks = previewCodes.filter(
             (c) => c.lang === "javascript" || c.lang === "js" || c.lang === "typescript" || c.lang === "ts" || c.lang === "jsx" || c.lang === "tsx"
           );
 
@@ -2400,14 +2591,14 @@ ${bodyHtml}
           }
 
           // Build nice filenames for each code block
-          const tabs = allCodes.map((c, idx) => {
+          const tabs = previewCodes.map((c, idx) => {
             let name = "file";
             if (c.lang === "html" || c.lang === "htm") name = "index.html";
             else if (c.lang === "css") name = "style.css";
             else if (c.lang === "javascript" || c.lang === "js" || c.lang === "typescript" || c.lang === "ts") name = "script.js";
             else name = `code-${idx + 1}.${c.lang || "txt"}`;
 
-            const count = allCodes.filter((x, i) => i < idx && (x.lang === c.lang || (c.lang === "javascript" && x.lang === "js"))).length;
+            const count = previewCodes.filter((x, i) => i < idx && (x.lang === c.lang || (c.lang === "javascript" && x.lang === "js"))).length;
             if (count > 0) {
               const parts = name.split(".");
               name = `${parts[0]}-${count + 1}.${parts[1]}`;
@@ -2415,7 +2606,7 @@ ${bodyHtml}
             return { id: c.id, name, block: c };
           });
 
-          const currentActiveBlock = allCodes.find((c) => c.id === activeCodeId) || allCodes[0] || null;
+          const currentActiveBlock = previewCodes.find((c) => c.id === activeCodeId) || previewCodes[0] || null;
 
           return (
             <motion.div
@@ -2637,7 +2828,7 @@ ${bodyHtml}
           className={`dock-item ${showPreview ? "active" : ""}`}
           title={i.previewWebsite}
           onClick={() => {
-            if (!allCodes.length) {
+            if (!previewCodes.length) {
               showToast(i.noCodeYet);
               return;
             }
@@ -2843,7 +3034,7 @@ ${bodyHtml}
         )}
       </AnimatePresence>
 
-      {/* Templates drawer — list + live preview */}
+      {/* Templates drawer — real scaffolds + live preview */}
       <AnimatePresence>
         {sheet === "templates" && (
           <motion.div
@@ -2917,41 +3108,60 @@ ${bodyHtml}
                   visibleTemplates.find((t) => t.id === previewTemplateId) ||
                   visibleTemplates[0] ||
                   null;
+                const KindIcon = selected
+                  ? TEMPLATE_KIND_ICONS[selected.kind] || FileText
+                  : FileText;
                 return (
                   <div className="templates-layout">
                     <div className="templates-list scroll-thin space-y-2">
-                      {visibleTemplates.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setPreviewTemplateId(t.id)}
-                          onDoubleClick={() => applyTemplate(t)}
-                          className={`template-card ${
-                            selected?.id === t.id ? "active" : ""
-                          }`}
-                        >
-                          <span className="t-cat">{t.category}</span>
-                          <span className="t-title block">{t.title}</span>
-                          <span className="t-desc line-clamp-2 block">
-                            {t.description}
-                          </span>
-                        </button>
-                      ))}
+                      {visibleTemplates.map((t) => {
+                        const Icon = TEMPLATE_KIND_ICONS[t.kind] || FileText;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setPreviewTemplateId(t.id)}
+                            onDoubleClick={() => applyTemplate(t)}
+                            className={`template-card ${
+                              selected?.id === t.id ? "active" : ""
+                            }`}
+                          >
+                            <div className="template-card-top">
+                              <span className="template-kind-icon">
+                                <Icon className="h-3.5 w-3.5" />
+                              </span>
+                              <span className="t-cat">{t.category}</span>
+                              <span className="template-badge">{t.badge}</span>
+                            </div>
+                            <span className="t-title block">{t.title}</span>
+                            <span className="t-desc line-clamp-2 block">
+                              {t.description}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
 
                     <div className="template-preview-pane">
                       {selected ? (
                         <>
                           <div className="template-preview-head">
-                            <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--on-surface-variant)]">
-                              {i.templatePreview}
-                            </p>
-                            <h3 className="mt-1 text-[15px] font-semibold text-[var(--on-surface)]">
-                              {selected.title}
-                            </h3>
-                            <p className="mt-1 text-[12.5px] leading-snug text-[var(--on-surface-variant)]">
-                              {selected.description}
-                            </p>
+                            <div className="flex items-start gap-3">
+                              <span className="template-kind-icon lg">
+                                <KindIcon className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--on-surface-variant)]">
+                                  {i.templateScaffold} · {selected.badge}
+                                </p>
+                                <h3 className="mt-1 text-[15px] font-semibold text-[var(--on-surface)]">
+                                  {selected.title}
+                                </h3>
+                                <p className="mt-1 text-[12.5px] leading-snug text-[var(--on-surface-variant)]">
+                                  {selected.description}
+                                </p>
+                              </div>
+                            </div>
                             <button
                               type="button"
                               className="btn-primary mt-3 !h-9 !px-4 text-[13px]"
@@ -2961,6 +3171,15 @@ ${bodyHtml}
                             </button>
                           </div>
                           <div className="template-preview-body scroll-thin">
+                            <div className="template-preview-block scaffold">
+                              <div className="template-preview-block-label">
+                                {i.templateScaffold}
+                              </div>
+                              <pre className="template-scaffold-code">
+                                {selected.scaffold.slice(0, 1400)}
+                                {selected.scaffold.length > 1400 ? "\n…" : ""}
+                              </pre>
+                            </div>
                             <div className="template-preview-block">
                               <div className="template-preview-block-label">
                                 {i.templateExampleInput}
@@ -2989,6 +3208,25 @@ ${bodyHtml}
                 );
               })()}
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Global file drop overlay */}
+      <AnimatePresence>
+        {globalDrag && (
+          <motion.div
+            className="drop-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            <div className="drop-overlay-card">
+              <Upload className="h-8 w-8 text-[var(--on-tertiary-container)]" />
+              <p className="drop-overlay-title">{i.dropOverlayTitle}</p>
+              <p className="drop-overlay-sub">{i.dropOverlaySub}</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

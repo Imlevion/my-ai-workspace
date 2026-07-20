@@ -1,6 +1,11 @@
 import { requireUser } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/db";
-import { buildSystemPrompt, titleFromText } from "@/app/lib/models";
+import {
+  buildAgentTurnPrompt,
+  buildSystemPrompt,
+  MAX_AGENTS,
+  titleFromText,
+} from "@/app/lib/models";
 
 export const runtime = "nodejs";
 
@@ -9,6 +14,8 @@ type AgentPayload = {
   name: string;
   model: string;
   role: string;
+  deliverable?: string;
+  defaultTask?: string;
   task?: string;
 };
 
@@ -73,9 +80,16 @@ export async function POST(req: Request) {
         id: a.id,
         name: String(a.name).slice(0, 40),
         model: String(a.model),
-        role: String(a.role || "Help with the user request.").slice(0, 400),
+        role: String(a.role || "Specialist").slice(0, 120),
+        deliverable: a.deliverable
+          ? String(a.deliverable).slice(0, 400)
+          : "",
+        defaultTask: a.defaultTask
+          ? String(a.defaultTask).slice(0, 800)
+          : "",
         task: a.task ? String(a.task).slice(0, 800) : "",
-      }));
+      }))
+      .slice(0, MAX_AGENTS);
 
     if (!chatId || !content) {
       return new Response(
@@ -159,11 +173,11 @@ If the user later asks for code or a long draft, switch to full deliverables.`;
 
     if (viewTab === "collaborate" && agents.length === 0) {
       systemPromptContent += `\n\n[Collaboration Mode]:
-You coordinate a multi-agent team. Structure the answer with clear sections per role when useful:
-### Planner
-### Builder
-### Reviewer
-Keep each section focused on its specialty. Stay clean and professional.`;
+You coordinate a multi-agent pipeline. Structure the answer with clear sections:
+### Architect — frame problem, approach, success criteria
+### Builder — complete usable deliverables (code/drafts/specs)
+### Reviewer — risks, gaps, prioritized fixes
+Each section stays in its specialty. No role-play chatter.`;
     }
 
     const historyMsgs = history.map((m) => ({
@@ -191,37 +205,60 @@ Keep each section focused on its specialty. Stay clean and professional.`;
           let priorContext = "";
 
           try {
+            // Intro banner so the user sees the pipeline plan
+            const roster = agents
+              .map(
+                (a, idx) =>
+                  `${idx + 1}. **${a.name}** — ${a.role}${
+                    a.task?.trim() ? ` · _${a.task.trim().slice(0, 80)}_` : ""
+                  }`
+              )
+              .join("\n");
+            const pipelineIntro = `## Multi-agent pipeline\n${roster}\n\n_Each agent runs on its own model with a fixed specialty._\n\n`;
+            send({ type: "delta", content: pipelineIntro });
+            parts.push(pipelineIntro);
+
             for (let i = 0; i < agents.length; i++) {
               const agent = agents[i];
-              const header = `### ${agent.name}\n_Model: ${agent.model}_\n\n`;
+              const header = `### ${agent.name}\n_${agent.role} · ${agent.model}_\n\n`;
               send({
                 type: "agent_start",
-                agent: { name: agent.name, model: agent.model, index: i },
+                agent: {
+                  name: agent.name,
+                  model: agent.model,
+                  role: agent.role,
+                  index: i,
+                  total: agents.length,
+                },
               });
-              send({ type: "delta", content: i === 0 ? header : `\n\n${header}` });
+              send({ type: "delta", content: header });
 
-              const agentSystem = `${systemPromptContent}
-
-[You are agent "${agent.name}"]
-Your specialty / role: ${agent.role}
-${agent.task?.trim() ? `Your assigned task for this turn: ${agent.task.trim()}` : "Contribute your specialty to the shared user request."}
-${priorContext ? `\nPrior teammates already produced:\n${priorContext.slice(0, 6000)}` : ""}
-Respond ONLY with your section — do not speak for other agents. Be concrete.`;
-
-              const agentUser = agent.task?.trim()
-                ? `Shared user request:\n${content}\n\nYour specific task:\n${agent.task.trim()}`
-                : content;
+              const turn = buildAgentTurnPrompt({
+                baseSystem: systemPromptContent,
+                agent: {
+                  name: agent.name,
+                  role: agent.role,
+                  deliverable: agent.deliverable,
+                  defaultTask: agent.defaultTask,
+                  task: agent.task,
+                },
+                agentIndex: i,
+                agentCount: agents.length,
+                userRequest: content,
+                priorContext,
+              });
 
               const groqRes = await callGroq({
                 apiKey: user.apiKey!,
                 model: agent.model,
                 messages: [
-                  { role: "system", content: agentSystem },
-                  ...historyMsgs,
-                  { role: "user", content: agentUser },
+                  { role: "system", content: turn.system },
+                  // Keep recent history for continuity, but agent turn is explicit
+                  ...historyMsgs.slice(-6),
+                  { role: "user", content: turn.user },
                 ],
-                temperature,
-                maxTokens: Math.min(maxTokens, 2048),
+                temperature: Math.min(temperature, 0.65),
+                maxTokens: Math.min(maxTokens, 2500),
                 stream: false,
               });
 

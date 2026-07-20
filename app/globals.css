@@ -434,21 +434,26 @@ select {
   justify-content: center;
   gap: 8px;
   height: 40px;
-  padding: 0 16px;
-  border-radius: var(--radius);
+  padding: 0 18px;
+  border-radius: 999px;
   background: var(--primary);
   color: var(--on-primary);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
   letter-spacing: 0.01em;
-  transition: opacity 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 .btn-primary:hover {
-  opacity: 0.9;
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
 }
 .btn-primary:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-ghost {
@@ -457,16 +462,18 @@ select {
   justify-content: center;
   gap: 6px;
   height: 36px;
-  padding: 0 12px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 500;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent);
+  font-size: 13.5px;
+  font-weight: 550;
   color: var(--on-surface-variant);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .btn-ghost:hover {
   background: var(--surface-container);
   color: var(--on-surface);
+  border-color: color-mix(in srgb, var(--outline-variant) 85%, transparent);
 }
 .btn-ghost.active {
   color: var(--primary);
@@ -882,7 +889,12 @@ select {
 }
 
 .sheet.templates-sheet {
-  width: min(920px, 100vw);
+  width: min(960px, 100vw);
+  background: linear-gradient(
+    180deg,
+    var(--surface-container-lowest) 0%,
+    color-mix(in srgb, var(--surface-container) 35%, var(--surface-container-lowest)) 100%
+  );
 }
 
 .sheet.modal {
@@ -992,20 +1004,70 @@ select {
   width: 100%;
   text-align: left;
   padding: 14px 16px;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--outline-variant) 40%, transparent);
   background: var(--surface-container-low);
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
   cursor: pointer;
 }
 .template-card:hover {
   border-color: color-mix(in srgb, var(--outline-variant) 80%, transparent);
   background: var(--surface-container);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 .template-card.active {
-  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
-  background: color-mix(in srgb, var(--primary) 8%, var(--surface-container-low));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
+  border-color: color-mix(in srgb, var(--on-tertiary-container) 45%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--on-tertiary-container) 8%,
+    var(--surface-container-low)
+  );
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--on-tertiary-container) 18%, transparent);
+}
+.template-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+.template-kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-container));
+  color: var(--on-surface);
+  flex-shrink: 0;
+}
+.template-kind-icon.lg {
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.65rem;
+  background: color-mix(
+    in srgb,
+    var(--on-tertiary-container) 14%,
+    var(--surface-container)
+  );
+  color: var(--on-tertiary-container);
+}
+.template-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
 }
 .template-card .t-cat {
   font-size: 11px;
@@ -1015,7 +1077,6 @@ select {
   color: var(--on-surface-variant);
 }
 .template-card .t-title {
-  margin-top: 6px;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -1025,6 +1086,87 @@ select {
   margin-top: 4px;
   font-size: 12.5px;
   line-height: 1.45;
+  color: var(--on-surface-variant);
+}
+.template-scaffold-code {
+  margin: 0;
+  padding: 0.85rem;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--on-surface);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--surface-container) 40%, transparent);
+}
+.template-preview-block.scaffold {
+  border-color: color-mix(in srgb, var(--on-tertiary-container) 28%, transparent);
+}
+.empty-template-row {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+.empty-template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-container-lowest) 90%, transparent);
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--on-surface-variant);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.empty-template-chip:hover {
+  color: var(--on-surface);
+  border-color: color-mix(in srgb, var(--outline-variant) 90%, transparent);
+  background: var(--surface-container);
+}
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: color-mix(in srgb, var(--background) 55%, rgba(10, 10, 14, 0.45));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.drop-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: min(360px, 92vw);
+  padding: 2rem 1.75rem;
+  border-radius: 1.25rem;
+  border: 1.5px dashed color-mix(in srgb, var(--on-tertiary-container) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-container-lowest) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.drop-overlay-title {
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+}
+.drop-overlay-sub {
+  font-size: 0.85rem;
   color: var(--on-surface-variant);
 }
 
@@ -1108,10 +1250,15 @@ select {
   flex-direction: column;
   gap: 0.55rem;
   margin-bottom: 0.75rem;
-  padding: 0.75rem 0.85rem;
-  border-radius: 1rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 1.05rem;
   border: 1px solid color-mix(in srgb, var(--outline-variant) 40%, transparent);
-  background: color-mix(in srgb, var(--surface-container-lowest) 88%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-container-lowest) 96%, transparent),
+    color-mix(in srgb, var(--surface-container) 35%, var(--surface-container-lowest))
+  );
+  box-shadow: var(--shadow-sm);
 }
 .agent-team-head {
   display: flex;
@@ -1126,31 +1273,61 @@ select {
   text-transform: uppercase;
   color: var(--on-surface-variant);
 }
+.agent-pipeline-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--on-tertiary-container) 8%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--on-tertiary-container) 16%, transparent);
+}
 .agent-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 0.5rem;
+  gap: 0.55rem;
   align-items: start;
-  padding: 0.55rem 0.6rem;
-  border-radius: 0.75rem;
-  background: var(--surface-container-low);
+  padding: 0.65rem 0.7rem;
+  border-radius: 0.85rem;
+  background: var(--surface-container-lowest);
   border: 1px solid color-mix(in srgb, var(--outline-variant) 28%, transparent);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.agent-row:hover {
+  border-color: color-mix(in srgb, var(--outline-variant) 55%, transparent);
+  box-shadow: var(--shadow-sm);
 }
 .agent-row.disabled {
   opacity: 0.45;
+}
+.agent-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding-top: 0.2rem;
 }
 .agent-dot {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 999px;
-  margin-top: 0.45rem;
   flex-shrink: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent);
+}
+.agent-step-num {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--on-surface-variant);
+  min-width: 1.1rem;
+  text-align: center;
 }
 .agent-meta {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 .agent-name-row {
   display: flex;
@@ -1167,23 +1344,51 @@ select {
   font-size: 11px;
   font-weight: 500;
   color: var(--on-surface-variant);
-  background: transparent;
-  border: 0;
+  background: var(--surface-container);
+  border: 1px solid color-mix(in srgb, var(--outline-variant) 40%, transparent);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
   max-width: 100%;
   outline: none;
   cursor: pointer;
+}
+.agent-role-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+}
+.agent-role-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--on-tertiary-container);
+  background: color-mix(in srgb, var(--on-tertiary-container) 12%, transparent);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+}
+.agent-deliverable {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--on-surface-variant);
 }
 .agent-task-input {
   width: 100%;
   font-size: 12px;
   line-height: 1.4;
   color: var(--on-surface);
-  background: transparent;
-  border: 0;
+  background: var(--surface-container-low);
+  border: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
+  border-radius: 0.55rem;
   outline: none;
-  resize: none;
-  min-height: 1.35rem;
-  padding: 0;
+  resize: vertical;
+  min-height: 2.4rem;
+  padding: 0.4rem 0.55rem;
+}
+.agent-task-input:focus {
+  border-color: color-mix(in srgb, var(--on-tertiary-container) 40%, transparent);
 }
 .agent-task-input::placeholder {
   color: color-mix(in srgb, var(--on-surface-variant) 80%, transparent);
@@ -1192,6 +1397,33 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+/* Multi-agent section headers inside chat markdown */
+.agent-md-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 1rem 0 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--outline-variant) 40%, transparent);
+  background: color-mix(in srgb, var(--surface-container) 70%, transparent);
+}
+.agent-md-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--on-tertiary-container);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--on-tertiary-container) 18%, transparent);
+  flex-shrink: 0;
+}
+.agent-md-title {
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--on-surface);
 }
 
 /* Focus floating asset dock */
@@ -1372,19 +1604,40 @@ select {
   justify-content: center;
   text-align: center;
   padding: 2rem 0 1rem;
+  position: relative;
+}
+.chat-empty::before {
+  content: "";
+  position: absolute;
+  width: min(420px, 70vw);
+  height: 220px;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--on-tertiary-container) 14%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+.chat-empty > * {
+  position: relative;
+  z-index: 1;
 }
 
 .chat-empty-title {
   margin: 0;
-  font-size: clamp(1.65rem, 3.5vw, 2.1rem);
+  font-size: clamp(1.65rem, 3.5vw, 2.15rem);
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.035em;
   color: var(--on-surface);
 }
 
 .chat-empty-sub {
   margin: 0.75rem 0 0;
-  max-width: 26rem;
+  max-width: 28rem;
   font-size: 15px;
   line-height: 1.55;
   color: var(--on-surface-variant);
