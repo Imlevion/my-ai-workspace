@@ -3,9 +3,10 @@ import { publicUser, requireUser } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/db";
 import {
   ALL_MODELS,
-  detectProviderFromKey,
   mergeUniversalKey,
+  modelsForKeys,
   parseProviderKeys,
+  resolveProviderFromKey,
   serializeProviderKeys,
   type ProviderId,
 } from "@/app/lib/providers";
@@ -28,18 +29,41 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const data: Record<string, string | number | boolean> = {};
 
-    // Single universal API key — auto-detect provider (optional override)
+    // Single universal API key — resolve provider (manual override or live probe)
     if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+      const rawKey = body.apiKey.trim();
+      const overrideRaw = body.providerOverride;
+      const override: ProviderId | "auto" | null =
+        typeof overrideRaw === "string" &&
+        PROVIDER_IDS.includes(overrideRaw as ProviderId)
+          ? (overrideRaw as ProviderId)
+          : overrideRaw === "auto"
+            ? "auto"
+            : "auto";
+
+      const resolved = await resolveProviderFromKey(rawKey, override);
+      if (!resolved.provider) {
+        return NextResponse.json(
+          {
+            error:
+              resolved.error ||
+              "Could not detect provider. Choose OpenAI or Moonshot/Kimi manually.",
+          },
+          { status: 400 }
+        );
+      }
+
       const current = parseProviderKeys(user.apiKey || "");
-      const override =
-        typeof body.providerOverride === "string" &&
-        PROVIDER_IDS.includes(body.providerOverride as ProviderId)
-          ? (body.providerOverride as ProviderId)
-          : detectProviderFromKey(body.apiKey);
-      const next = mergeUniversalKey(current, body.apiKey.trim(), override);
+      const next = mergeUniversalKey(current, rawKey, resolved.provider);
       data.apiKey = serializeProviderKeys(next);
+
+      // If current model is not available under new keys, pick a valid default
+      const avail = modelsForKeys(next);
+      const currentModel = String(body.model || user.model || "");
+      if (avail.length && !avail.some((m) => m.id === currentModel)) {
+        data.model = avail[0].id;
+      }
     } else if (body.providerKeys && typeof body.providerKeys === "object") {
-      // Backward compat: multi-key object still accepted
       const current = parseProviderKeys(user.apiKey || "");
       const next = { ...current };
       for (const id of PROVIDER_IDS) {
@@ -85,7 +109,21 @@ export async function PATCH(req: Request) {
       data,
     });
 
-    return NextResponse.json({ user: publicUser(updated) });
+    return NextResponse.json({
+      user: publicUser(updated),
+      detectedProvider:
+        typeof body.apiKey === "string" && body.apiKey.trim()
+          ? (data.apiKey
+              ? // re-read from saved
+                Object.keys(parseProviderKeys(String(data.apiKey))).find(
+                  (id) =>
+                    parseProviderKeys(String(data.apiKey))[
+                      id as ProviderId
+                    ]
+                )
+              : null)
+          : undefined,
+    });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Update failed";
     return NextResponse.json({ error: message }, { status: 500 });

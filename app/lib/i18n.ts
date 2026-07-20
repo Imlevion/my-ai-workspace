@@ -163,8 +163,11 @@ const en = {
   universalApiKeysHint:
     "Paste any supported key once (OpenAI, Gemini, Groq, Claude, Moonshot). Provider is detected automatically.",
   providerDetect: "Detected",
-  providerAuto: "Auto-detect",
+  providerAuto: "Auto-detect (probe)",
   providerUnknown: "Unknown — pick a provider",
+  providerAmbiguousSk: "OpenAI or Moonshot/Kimi (pick one)",
+  providerAmbiguousHint:
+    "Keys starting with sk- are used by both OpenAI and Moonshot/Kimi. Choose the correct provider before saving — we will also verify the key against the API.",
   connectedProviders: "Connected",
   modelNeedsKey: "Add an API key in Account to see available models.",
   visualEditorHint: "Move, resize, recolor in preview — code updates live",
@@ -482,8 +485,11 @@ const id: Dict = {
   universalApiKeysHint:
     "Tempel satu key (OpenAI, Gemini, Groq, Claude, Moonshot). Provider dideteksi otomatis.",
   providerDetect: "Terdeteksi",
-  providerAuto: "Deteksi otomatis",
+  providerAuto: "Deteksi otomatis (probe API)",
   providerUnknown: "Tidak dikenali — pilih provider",
+  providerAmbiguousSk: "OpenAI atau Moonshot/Kimi (pilih)",
+  providerAmbiguousHint:
+    "Key yang diawali sk- dipakai OpenAI dan Moonshot/Kimi. Pilih provider yang benar sebelum simpan — key juga akan diverifikasi ke API.",
   connectedProviders: "Terhubung",
   modelNeedsKey: "Tambah API key di Akun untuk melihat model yang tersedia.",
   visualEditorHint: "Geser, ubah ukuran, warna di preview — kode ikut update",

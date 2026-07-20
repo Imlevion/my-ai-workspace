@@ -105,7 +105,7 @@ import {
 } from "./lib/models";
 import {
   PROVIDERS,
-  detectProviderFromKey,
+  classifyApiKey,
   maxAgentsForKeys,
   type ProviderId,
   type ProviderKeys,
@@ -1030,9 +1030,7 @@ export default function Home() {
           ...(apiKeyDraft.trim()
             ? {
                 apiKey: apiKeyDraft.trim(),
-                ...(providerOverride !== "auto"
-                  ? { providerOverride }
-                  : {}),
+                providerOverride,
               }
             : {}),
         }),
@@ -1609,8 +1607,8 @@ export default function Home() {
     return `${i.goodNight}${displayName}`;
   };
 
-  const detectedKeyProvider = apiKeyDraft.trim()
-    ? detectProviderFromKey(apiKeyDraft)
+  const keyClassify = apiKeyDraft.trim()
+    ? classifyApiKey(apiKeyDraft)
     : null;
 
   const isFocus = viewTab === "focus";
@@ -3854,13 +3852,15 @@ ${bodyHtml}
                               {providerOverride !== "auto"
                                 ? PROVIDERS.find((p) => p.id === providerOverride)
                                     ?.label
-                                : detectedKeyProvider
-                                  ? PROVIDERS.find(
-                                      (p) => p.id === detectedKeyProvider
-                                    )?.label
-                                  : apiKeyDraft.trim()
-                                    ? i.providerUnknown
-                                    : "—"}
+                                : keyClassify?.needsManualPick
+                                  ? i.providerAmbiguousSk
+                                  : keyClassify?.provider
+                                    ? PROVIDERS.find(
+                                        (p) => p.id === keyClassify.provider
+                                      )?.label
+                                    : apiKeyDraft.trim()
+                                      ? i.providerUnknown
+                                      : "—"}
                             </strong>
                           </span>
                           <select
@@ -3880,6 +3880,12 @@ ${bodyHtml}
                             ))}
                           </select>
                         </div>
+                        {keyClassify?.needsManualPick &&
+                          providerOverride === "auto" && (
+                            <p className="mt-1.5 text-[11.5px] leading-snug text-[var(--error)]">
+                              {i.providerAmbiguousHint}
+                            </p>
+                          )}
                         {user.providers && (
                           <p className="mt-2 text-[11px] text-[var(--on-surface-variant)]">
                             {i.connectedProviders}:{" "}

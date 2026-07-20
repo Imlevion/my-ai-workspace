@@ -41,9 +41,9 @@ export const PROVIDERS: {
   },
   {
     id: "moonshot",
-    label: "Moonshot",
-    placeholder: "sk-…",
-    hint: "platform.moonshot.cn",
+    label: "Moonshot / Kimi",
+    placeholder: "sk-… (pick provider if Auto is unsure)",
+    hint: "platform.kimi.ai · platform.kimi.com",
   },
 ];
 
@@ -158,60 +158,185 @@ export const ALL_MODELS: ModelDef[] = [
     speed: "Fast",
     tier: "Speed",
   },
-  // Moonshot
+  // Moonshot / Kimi — current model IDs from official platform.kimi.ai docs
   {
-    id: "moonshot-v1-8k",
+    id: "kimi-k2.6",
     provider: "moonshot",
-    label: "Moonshot v1 8K",
-    tagline: "Everyday use",
+    label: "Kimi K2.6",
+    tagline: "Flagship · thinking mode",
+    speed: "Standard",
+    tier: "Flagship",
+  },
+  {
+    id: "kimi-k2.5",
+    provider: "moonshot",
+    label: "Kimi K2.5",
+    tagline: "Strong general model",
+    speed: "Standard",
+    tier: "Scale",
+  },
+  {
+    id: "kimi-k2.7-code",
+    provider: "moonshot",
+    label: "Kimi K2.7 Code",
+    tagline: "Coding · always thinking",
+    speed: "Standard",
+    tier: "Code",
+  },
+  {
+    id: "kimi-k2.7-code-highspeed",
+    provider: "moonshot",
+    label: "Kimi K2.7 Code Fast",
+    tagline: "Coding · ~180 tok/s",
     speed: "Fast",
-    tier: "Speed",
+    tier: "Code",
   },
   {
-    id: "moonshot-v1-32k",
+    id: "kimi-k3",
     provider: "moonshot",
-    label: "Moonshot v1 32K",
-    tagline: "Longer context",
+    label: "Kimi K3",
+    tagline: "Latest K3 reasoning",
     speed: "Standard",
-    tier: "Scale",
-  },
-  {
-    id: "moonshot-v1-128k",
-    provider: "moonshot",
-    label: "Moonshot v1 128K",
-    tagline: "Very long context",
-    speed: "Standard",
-    tier: "Scale",
+    tier: "Flagship",
   },
 ];
 
 /** @deprecated use ALL_MODELS — kept for import compatibility */
 export const GROQ_MODELS = ALL_MODELS.filter((m) => m.provider === "groq");
 
+export type KeyClassifyResult = {
+  /** High-confidence provider, or null if unknown/ambiguous */
+  provider: ProviderId | null;
+  /** sk- without sk-proj- can be OpenAI OR Moonshot/Kimi */
+  needsManualPick: boolean;
+  label: string;
+};
+
 /**
- * Detect provider from a single pasted API key.
- * Supports OpenAI, Gemini, Groq, Anthropic, Moonshot prefixes.
+ * Classify a pasted API key by known official prefixes.
+ * Never guess OpenAI for generic `sk-` — Moonshot/Kimi keys also use `sk-`.
  */
-export function detectProviderFromKey(key: string): ProviderId | null {
+export function classifyApiKey(key: string): KeyClassifyResult {
   const k = key.trim();
-  if (!k) return null;
-  if (k.startsWith("gsk_")) return "groq";
-  if (k.startsWith("sk-ant-")) return "anthropic";
-  if (k.startsWith("AIza") || k.startsWith("AI")) return "gemini";
-  // Moonshot keys are often sk-…; prefer openai for generic sk-
-  // Users can override via providerOverride when saving.
-  if (k.startsWith("sk-")) return "openai";
-  // Heuristic: long alphanumeric Google-style without AIza
-  if (/^[A-Za-z0-9_-]{30,}$/.test(k) && !k.includes(".")) return "gemini";
-  return null;
+  if (!k) {
+    return { provider: null, needsManualPick: false, label: "" };
+  }
+  if (k.startsWith("gsk_")) {
+    return { provider: "groq", needsManualPick: false, label: "Groq" };
+  }
+  if (k.startsWith("sk-ant-")) {
+    return {
+      provider: "anthropic",
+      needsManualPick: false,
+      label: "Claude (Anthropic)",
+    };
+  }
+  if (k.startsWith("AIza")) {
+    return {
+      provider: "gemini",
+      needsManualPick: false,
+      label: "Gemini (Google AI Studio)",
+    };
+  }
+  // OpenAI project / service-account keys (distinct from Moonshot)
+  if (k.startsWith("sk-proj-") || k.startsWith("sk-svcacct-")) {
+    return { provider: "openai", needsManualPick: false, label: "OpenAI" };
+  }
+  // Generic sk- : OpenAI user keys AND Moonshot/Kimi keys share this prefix
+  if (k.startsWith("sk-")) {
+    return {
+      provider: null,
+      needsManualPick: true,
+      label: "OpenAI or Moonshot/Kimi",
+    };
+  }
+  // Google AI Studio sometimes issues non-AIza keys (rare)
+  if (/^[A-Za-z0-9_-]{35,}$/.test(k) && !k.includes(".")) {
+    return {
+      provider: "gemini",
+      needsManualPick: false,
+      label: "Gemini (Google AI Studio)",
+    };
+  }
+  return { provider: null, needsManualPick: false, label: "Unknown format" };
+}
+
+/** Sync detect — only returns high-confidence providers (never guesses sk- → openai) */
+export function detectProviderFromKey(key: string): ProviderId | null {
+  return classifyApiKey(key).provider;
+}
+
+async function probeModelsEndpoint(
+  baseUrl: string,
+  apiKey: string
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Probe which OpenAI-compatible host accepts this key */
+export async function resolveProviderFromKey(
+  key: string,
+  override?: ProviderId | null | "auto"
+): Promise<{ provider: ProviderId | null; error?: string }> {
+  const k = key.trim();
+  if (!k) return { provider: null, error: "Empty API key" };
+
+  if (override && override !== "auto") {
+    return { provider: override };
+  }
+
+  const classified = classifyApiKey(k);
+  if (classified.provider) {
+    return { provider: classified.provider };
+  }
+
+  if (!classified.needsManualPick) {
+    return {
+      provider: null,
+      error:
+        "Unrecognized key format. Choose a provider manually (OpenAI, Gemini, Groq, Claude, or Moonshot/Kimi).",
+    };
+  }
+
+  // Ambiguous sk- : live-probe Moonshot/Kimi then OpenAI
+  const [msAi, msCn, oai] = await Promise.all([
+    probeModelsEndpoint("https://api.moonshot.ai/v1", k),
+    probeModelsEndpoint("https://api.moonshot.cn/v1", k),
+    probeModelsEndpoint("https://api.openai.com/v1", k),
+  ]);
+  const moonshotOk = msAi || msCn;
+  if (moonshotOk && !oai) return { provider: "moonshot" };
+  if (oai && !moonshotOk) return { provider: "openai" };
+  if (moonshotOk && oai) {
+    return {
+      provider: null,
+      error:
+        "This key format matches both OpenAI and Moonshot. Pick the provider manually before saving.",
+    };
+  }
+  return {
+    provider: null,
+    error:
+      "Key was rejected by OpenAI and Moonshot/Kimi. Check the key or pick the correct provider.",
+  };
 }
 
 export function parseProviderKeys(raw: string | null | undefined): ProviderKeys {
   if (!raw?.trim()) return {};
   const t = raw.trim();
   if (!t.startsWith("{")) {
-    // Legacy plain key — auto-detect provider
-    const p = detectProviderFromKey(t) || "groq";
+    const p = detectProviderFromKey(t);
+    // Don't silently mis-assign ambiguous sk- keys
+    if (!p) return {};
     return { [p]: t };
   }
   try {
@@ -223,7 +348,8 @@ export function parseProviderKeys(raw: string | null | undefined): ProviderKeys 
     }
     return out;
   } catch {
-    const p = detectProviderFromKey(t) || "groq";
+    const p = detectProviderFromKey(t);
+    if (!p) return {};
     return { [p]: t };
   }
 }
@@ -232,12 +358,17 @@ export function parseProviderKeys(raw: string | null | undefined): ProviderKeys 
 export function mergeUniversalKey(
   existing: ProviderKeys,
   key: string,
-  override?: ProviderId | null
+  provider: ProviderId
 ): ProviderKeys {
-  const provider = override || detectProviderFromKey(key);
   if (!provider || !key.trim()) return existing;
   return { ...existing, [provider]: key.trim() };
 }
+
+/** Official Moonshot/Kimi OpenAI-compatible bases (intl + China) */
+export const MOONSHOT_BASES = [
+  "https://api.moonshot.ai/v1",
+  "https://api.moonshot.cn/v1",
+] as const;
 
 export function serializeProviderKeys(keys: ProviderKeys): string {
   const clean: ProviderKeys = {};
@@ -310,12 +441,52 @@ export async function callProvider(opts: {
     opts;
 
   if (provider === "openai" || provider === "groq" || provider === "moonshot") {
+    if (provider === "moonshot") {
+      // Try international endpoint first, then China (official dual hosts)
+      const body = JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: stream ?? false,
+      });
+      let last: Response | null = null;
+      for (const base of MOONSHOT_BASES) {
+        try {
+          const res = await fetch(`${base}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body,
+          });
+          last = res;
+          // Wrong region often 401/403/404 with empty body — try next only on network-ish failures
+          if (res.ok || res.status === 400 || res.status === 429) return res;
+          if (res.status === 401 || res.status === 403) {
+            // Invalid key is the same on both; still try the other host once
+            continue;
+          }
+        } catch {
+          /* try next host */
+        }
+      }
+      return (
+        last ||
+        new Response(
+          JSON.stringify({
+            error: { message: "Moonshot/Kimi API unreachable" },
+          }),
+          { status: 502, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    }
+
     const base =
       provider === "openai"
         ? "https://api.openai.com/v1"
-        : provider === "groq"
-          ? "https://api.groq.com/openai/v1"
-          : "https://api.moonshot.cn/v1";
+        : "https://api.groq.com/openai/v1";
     return fetch(`${base}/chat/completions`, {
       method: "POST",
       headers: {
