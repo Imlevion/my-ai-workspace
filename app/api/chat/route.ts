@@ -375,6 +375,14 @@ Structure answers clearly. Stay concrete. If the user is not asking for code or 
     // ── Single-model path ─────────────────────────────────────────────────
     const payloadMessages = [
       { role: "system", content: systemPromptContent },
+      ...(chat.contextSummary
+        ? [
+            {
+              role: "user",
+              content: `[Previous conversation summary]: ${chat.contextSummary}`,
+            },
+          ]
+        : []),
       ...historyMsgs,
       { role: "user", content },
     ];

@@ -20,6 +20,8 @@ export async function GET() {
       mode: true,
       createdAt: true,
       updatedAt: true,
+      parentId: true,
+      contextSummary: true,
       _count: { select: { messages: true } },
     },
   });
@@ -34,15 +36,26 @@ export async function POST(req: Request) {
   }
 
   let mode = "auto";
+  let parentId: string | undefined;
+  let contextSummary: string | undefined;
   try {
     const body = await req.json();
     if (typeof body?.mode === "string") mode = body.mode;
+    if (typeof body?.parentId === "string") parentId = body.parentId;
+    if (typeof body?.contextSummary === "string")
+      contextSummary = body.contextSummary;
   } catch {
     // empty body is fine
   }
 
   const chat = await prisma.chat.create({
-    data: { userId: user.id, title: "New chat", mode },
+    data: {
+      userId: user.id,
+      title: "New chat",
+      mode,
+      parentId,
+      contextSummary,
+    },
   });
 
   return NextResponse.json({ chat });

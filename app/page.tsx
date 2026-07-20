@@ -76,6 +76,7 @@ import {
   Layout,
   Briefcase,
   GraduationCap,
+  GitBranch,
 } from "lucide-react";
 import {
   ACCEPTED_MEDIA,
@@ -146,6 +147,8 @@ type ChatItem = {
   createdAt?: string;
   pinned?: boolean;
   mode?: string;
+  parentId?: string | null;
+  contextSummary?: string | null;
 };
 
 type Msg = {
@@ -173,7 +176,7 @@ type Sheet =
   | "command"
   | "library";
 
-type ViewTab = "collaborate" | "focus";
+type ViewTab = "chat" | "collaborate" | "focus";
 /** Settings IA inspired by ChatGPT / Claude / Gemini */
 type SettingsTab =
   | "general"
@@ -372,7 +375,7 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [templateCat, setTemplateCat] = useState<string>("__all__");
-  const [viewTab, setViewTab] = useState<ViewTab>("collaborate");
+  const [viewTab, setViewTab] = useState<ViewTab>("chat");
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
   const [previewMaximized, setPreviewMaximized] = useState(false);
@@ -846,11 +849,19 @@ export default function Home() {
     setAssistantOpen(true);
   }
 
-  async function newChat(nextMode?: WorkModeId) {
+  async function newChat(
+    nextMode?: WorkModeId,
+    parentId?: string,
+    contextSummary?: string
+  ) {
     const res = await fetch("/api/chats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: nextMode || mode }),
+      body: JSON.stringify({
+        mode: nextMode || mode,
+        parentId,
+        contextSummary,
+      }),
     });
     const { chat } = await res.json();
     // New chats prepend once; list otherwise stays stable by createdAt
@@ -862,9 +873,20 @@ export default function Home() {
     setInput("");
     setFiles([]);
     if (nextMode) setMode(nextMode);
-    setViewTab("collaborate");
+    setViewTab("chat"); // Default to chat mode for child chats!
     setAssistantOpen(true);
     inputRef.current?.focus();
+  }
+
+  async function createChildChat() {
+    if (!activeId) return;
+    const summary = prompt(
+      "Describe what you want to keep from this chat (context summary):",
+      "Continuing the previous conversation about..."
+    );
+    if (summary !== null) {
+      await newChat(mode, activeId, summary);
+    }
   }
 
   async function deleteChat(id: string) {
@@ -1689,6 +1711,18 @@ export default function Home() {
       >
         <button
           type="button"
+          className={`rail-btn ${viewTab === "chat" && sheet === "none" ? "active" : ""}`}
+          title={i.chat}
+          onClick={() => {
+            setViewTab("chat");
+            setSheet("none");
+            setAssistantOpen(true);
+          }}
+        >
+          <MessageSquare className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
           className={`rail-btn ${viewTab === "collaborate" && sheet === "none" ? "active" : ""}`}
           title={i.workspace}
           onClick={() => {
@@ -1712,8 +1746,7 @@ export default function Home() {
           className={`rail-btn ${sheet === "templates" ? "active" : ""}`}
           title={i.templates}
           onClick={() =>
-            setSheet(sheet === "templates" ? "none" : "templates")
-          }
+            setSheet(sheet === "templates" ? "none" : "templates")}
         >
           <Wand2 className="h-5 w-5" />
         </button>
@@ -1725,6 +1758,18 @@ export default function Home() {
         className={`mobile-bottom-nav ${isFocus ? "is-hidden" : ""}`}
         aria-label="Mobile navigation"
       >
+        <button
+          type="button"
+          className={`mobile-nav-item ${viewTab === "chat" && sheet === "none" ? "active" : ""}`}
+          onClick={() => {
+            setViewTab("chat");
+            setSheet("none");
+            setAssistantOpen(true);
+          }}
+        >
+          <MessageSquare className="h-5 w-5" />
+          <span>{i.chat}</span>
+        </button>
         <button
           type="button"
           className={`mobile-nav-item ${viewTab === "collaborate" && sheet === "none" ? "active" : ""}`}
@@ -1785,6 +1830,16 @@ export default function Home() {
           <nav className="hidden items-center gap-5 sm:flex md:gap-6">
             <button
               type="button"
+              className={`nav-tab ${viewTab === "chat" ? "active" : ""}`}
+              onClick={() => {
+                setViewTab("chat");
+                setAssistantOpen(true);
+              }}
+            >
+              {i.chat}
+            </button>
+            <button
+              type="button"
               className={`nav-tab ${viewTab === "collaborate" ? "active" : ""}`}
               onClick={() => {
                 setViewTab("collaborate");
@@ -1812,6 +1867,17 @@ export default function Home() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {activeId && (
+            <button
+              type="button"
+              className="btn-ghost hidden sm:inline-flex"
+              onClick={createChildChat}
+              title="Create child chat from this conversation"
+            >
+              <GitBranch className="h-3.5 w-3.5 opacity-60" />
+              <span>Branch Chat</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn-ghost hidden sm:inline-flex"
@@ -2221,7 +2287,7 @@ export default function Home() {
             )}
 
             {/* Multi-agent team — Collaborate only */}
-            {!isFocus && (
+            {!isFocus && viewTab !== "chat" && (
               <div className="agent-team">
                 <div className="agent-team-head">
                   <button

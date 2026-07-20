@@ -25,18 +25,23 @@ model User {
 }
 
 model Chat {
-  id        String    @id @default(cuid())
-  title     String    @default("New chat")
-  pinned    Boolean   @default(false)
-  mode      String    @default("auto")
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  messages  Message[]
+  id              String    @id @default(cuid())
+  title           String    @default("New chat")
+  pinned          Boolean   @default(false)
+  mode            String    @default("auto")
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId        String?
+  parent          Chat?     @relation("ChatHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children        Chat[]    @relation("ChatHierarchy")
+  contextSummary  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  messages        Message[]
 
   @@index([userId, updatedAt])
   @@index([userId, pinned])
+  @@index([parentId])
 }
 
 model Message {
