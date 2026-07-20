@@ -3,10 +3,11 @@ import { publicUser, requireUser } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/db";
 import {
   ALL_MODELS,
+  detectProviderFromKey,
+  mergeUniversalKey,
   parseProviderKeys,
   serializeProviderKeys,
   type ProviderId,
-  type ProviderKeys,
 } from "@/app/lib/providers";
 
 const PROVIDER_IDS: ProviderId[] = [
@@ -27,27 +28,28 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const data: Record<string, string | number | boolean> = {};
 
-    // Universal multi-provider keys
-    if (body.providerKeys && typeof body.providerKeys === "object") {
+    // Single universal API key — auto-detect provider (optional override)
+    if (typeof body.apiKey === "string" && body.apiKey.trim()) {
       const current = parseProviderKeys(user.apiKey || "");
-      const next: ProviderKeys = { ...current };
+      const override =
+        typeof body.providerOverride === "string" &&
+        PROVIDER_IDS.includes(body.providerOverride as ProviderId)
+          ? (body.providerOverride as ProviderId)
+          : detectProviderFromKey(body.apiKey);
+      const next = mergeUniversalKey(current, body.apiKey.trim(), override);
+      data.apiKey = serializeProviderKeys(next);
+    } else if (body.providerKeys && typeof body.providerKeys === "object") {
+      // Backward compat: multi-key object still accepted
+      const current = parseProviderKeys(user.apiKey || "");
+      const next = { ...current };
       for (const id of PROVIDER_IDS) {
-        const v = body.providerKeys[id];
+        const v = (body.providerKeys as Record<string, unknown>)[id];
         if (typeof v === "string") {
-          // empty string = keep existing; "__clear__" = remove
-          if (v === "__clear__") {
-            delete next[id];
-          } else if (v.trim()) {
-            next[id] = v.trim();
-          }
+          if (v === "__clear__") delete next[id];
+          else if (v.trim()) next[id] = v.trim();
         }
       }
       data.apiKey = serializeProviderKeys(next);
-    } else if (typeof body.apiKey === "string" && body.apiKey.trim()) {
-      // Legacy single-key field → treat as Groq (backward compatible)
-      const current = parseProviderKeys(user.apiKey || "");
-      current.groq = body.apiKey.trim();
-      data.apiKey = serializeProviderKeys(current);
     }
 
     if (typeof body.name === "string" && body.name.trim()) {

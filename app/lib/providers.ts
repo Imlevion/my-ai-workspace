@@ -188,12 +188,31 @@ export const ALL_MODELS: ModelDef[] = [
 /** @deprecated use ALL_MODELS — kept for import compatibility */
 export const GROQ_MODELS = ALL_MODELS.filter((m) => m.provider === "groq");
 
+/**
+ * Detect provider from a single pasted API key.
+ * Supports OpenAI, Gemini, Groq, Anthropic, Moonshot prefixes.
+ */
+export function detectProviderFromKey(key: string): ProviderId | null {
+  const k = key.trim();
+  if (!k) return null;
+  if (k.startsWith("gsk_")) return "groq";
+  if (k.startsWith("sk-ant-")) return "anthropic";
+  if (k.startsWith("AIza") || k.startsWith("AI")) return "gemini";
+  // Moonshot keys are often sk-…; prefer openai for generic sk-
+  // Users can override via providerOverride when saving.
+  if (k.startsWith("sk-")) return "openai";
+  // Heuristic: long alphanumeric Google-style without AIza
+  if (/^[A-Za-z0-9_-]{30,}$/.test(k) && !k.includes(".")) return "gemini";
+  return null;
+}
+
 export function parseProviderKeys(raw: string | null | undefined): ProviderKeys {
   if (!raw?.trim()) return {};
   const t = raw.trim();
   if (!t.startsWith("{")) {
-    // Legacy single Groq key
-    return { groq: t };
+    // Legacy plain key — auto-detect provider
+    const p = detectProviderFromKey(t) || "groq";
+    return { [p]: t };
   }
   try {
     const obj = JSON.parse(t) as Record<string, unknown>;
@@ -204,8 +223,20 @@ export function parseProviderKeys(raw: string | null | undefined): ProviderKeys 
     }
     return out;
   } catch {
-    return { groq: t };
+    const p = detectProviderFromKey(t) || "groq";
+    return { [p]: t };
   }
+}
+
+/** Merge one universal key into the stored multi-key map */
+export function mergeUniversalKey(
+  existing: ProviderKeys,
+  key: string,
+  override?: ProviderId | null
+): ProviderKeys {
+  const provider = override || detectProviderFromKey(key);
+  if (!provider || !key.trim()) return existing;
+  return { ...existing, [provider]: key.trim() };
 }
 
 export function serializeProviderKeys(keys: ProviderKeys): string {

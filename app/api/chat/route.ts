@@ -142,26 +142,34 @@ export async function POST(req: Request) {
       systemPromptContent += `\n\n[User Memory Context]:\nRemember this context about the user for the assistant's responses:\n${customMemory}`;
     }
 
+    // Match answer style to the user's intent — never force code on casual chat
+    systemPromptContent += `\n\n[Response style · intent matching]:
+Match the user's request. For ordinary questions, chat, opinions, explanations, or advice:
+- Answer in natural prose (or short bullets if helpful).
+- Do NOT invent code, scaffolding, or fenced code blocks unless the user clearly asks for code, debugging, implementation, or a technical deliverable.
+- Do not open with code. Prefer a direct human answer first.
+Only when the user wants code/build/debug/HTML/CSS/JS/API work: provide complete fenced code with language tags.`;
+
     if (viewTab === "focus") {
       if (focusKind === "technical") {
         systemPromptContent += `\n\n[Focus Mode · Technical]:
-You are in Focus technical mode. Produce complete, usable deliverables:
+The user intent looks technical. Produce complete, usable deliverables:
 - Prefer full fenced code blocks with language tags for code
 - For long drafts (articles, emails, docs), put the full draft first, then a short bullet summary
 - Be precise; minimize chit-chat
-- The UI will open a side canvas — structure output so code/long text is easy to extract`;
+- The UI may open a side canvas — structure output so code/long text is easy to extract`;
       } else {
         systemPromptContent += `\n\n[Focus Mode · General chat]:
-Respond in dense bullet points only (5–8 bullets max). No long paragraphs.
-Lead with the answer. Each bullet = one key takeaway.
-Skip filler, greetings, and restating the question. Optimize for speed and low tokens.
-If the user later asks for code or a long draft, switch to full deliverables.`;
+This is a normal conversation, not a coding task.
+- Answer clearly in natural language (short paragraphs or 3–6 bullets).
+- Do NOT produce code, HTML, or pseudo-code unless the user explicitly asks.
+- Lead with the answer. Skip filler and restating the question.`;
       }
     }
 
     if (viewTab === "collaborate" && agents.length === 0) {
       systemPromptContent += `\n\n[Collaboration Mode]:
-Structure answers clearly. If multiple perspectives help, use short labeled sections. Stay concrete.`;
+Structure answers clearly. Stay concrete. If the user is not asking for code or multi-step technical work, reply like a normal assistant — no code dumps.`;
     }
 
     const historyMsgs = history.map((m) => ({

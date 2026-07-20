@@ -159,9 +159,13 @@ const en = {
   fileAttachedMany: "Attached {n} files",
   fileTooLarge: "{name} is too large (max {max})",
   noFilesAdded: "No files added",
-  universalApiKeys: "API keys",
+  universalApiKeys: "API key",
   universalApiKeysHint:
-    "Add keys for the providers you use. Models appear only for connected keys.",
+    "Paste any supported key once (OpenAI, Gemini, Groq, Claude, Moonshot). Provider is detected automatically.",
+  providerDetect: "Detected",
+  providerAuto: "Auto-detect",
+  providerUnknown: "Unknown — pick a provider",
+  connectedProviders: "Connected",
   modelNeedsKey: "Add an API key in Account to see available models.",
   visualEditorHint: "Move, resize, recolor in preview — code updates live",
 
@@ -476,7 +480,11 @@ const id: Dict = {
   noFilesAdded: "Tidak ada file yang ditambahkan",
   universalApiKeys: "API key",
   universalApiKeysHint:
-    "Tambah key untuk provider yang kamu pakai. Model hanya muncul untuk key yang terhubung.",
+    "Tempel satu key (OpenAI, Gemini, Groq, Claude, Moonshot). Provider dideteksi otomatis.",
+  providerDetect: "Terdeteksi",
+  providerAuto: "Deteksi otomatis",
+  providerUnknown: "Tidak dikenali — pilih provider",
+  connectedProviders: "Terhubung",
   modelNeedsKey: "Tambah API key di Akun untuk melihat model yang tersedia.",
   visualEditorHint: "Geser, ubah ukuran, warna di preview — kode ikut update",
 

@@ -105,6 +105,7 @@ import {
 } from "./lib/models";
 import {
   PROVIDERS,
+  detectProviderFromKey,
   maxAgentsForKeys,
   type ProviderId,
   type ProviderKeys,
@@ -377,15 +378,12 @@ export default function Home() {
   const [previewMaximized, setPreviewMaximized] = useState(false);
 
   const [nameDraft, setNameDraft] = useState("");
-  const [apiKeyDrafts, setApiKeyDrafts] = useState<
-    Record<ProviderId, string>
-  >({
-    openai: "",
-    gemini: "",
-    groq: "",
-    anthropic: "",
-    moonshot: "",
-  });
+  /** Single universal API key field (provider auto-detected) */
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [providerOverride, setProviderOverride] = useState<ProviderId | "auto">(
+    "auto"
+  );
+  const [greetingTick, setGreetingTick] = useState(0);
   const [tempDraft, setTempDraft] = useState(0.7);
   const [tokensDraft, setTokensDraft] = useState(4096);
   const [promptDraft, setPromptDraft] = useState(DEFAULT_SYSTEM_PROMPT);
@@ -990,13 +988,8 @@ export default function Home() {
       setShareData(localStorage.getItem("aura-share-data") === "true");
       setLocalCache(localStorage.getItem("aura-local-cache") !== "false");
     }
-    setApiKeyDrafts({
-      openai: "",
-      gemini: "",
-      groq: "",
-      anthropic: "",
-      moonshot: "",
-    });
+    setApiKeyDraft("");
+    setProviderOverride("auto");
     setSettingsTab("general");
     setSheet("settings");
   }
@@ -1022,12 +1015,6 @@ export default function Home() {
         localStorage.setItem("aura-local-cache", String(localCache));
       }
 
-      const providerKeys: Record<string, string> = {};
-      for (const p of PROVIDERS) {
-        const v = apiKeyDrafts[p.id]?.trim();
-        if (v) providerKeys[p.id] = v;
-      }
-
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1040,8 +1027,13 @@ export default function Home() {
           systemPrompt: promptDraft,
           sendWithEnter: enterDraft,
           showCanvas: canvasDraft,
-          ...(Object.keys(providerKeys).length
-            ? { providerKeys }
+          ...(apiKeyDraft.trim()
+            ? {
+                apiKey: apiKeyDraft.trim(),
+                ...(providerOverride !== "auto"
+                  ? { providerOverride }
+                  : {}),
+              }
             : {}),
         }),
       });
@@ -1049,13 +1041,8 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || "Failed to save");
       applyUser(data.user);
       applyTheme(themeDraft);
-      setApiKeyDrafts({
-        openai: "",
-        gemini: "",
-        groq: "",
-        anthropic: "",
-        moonshot: "",
-      });
+      setApiKeyDraft("");
+      setProviderOverride("auto");
       setSheet("none");
       showToast(i.saved);
     } catch (e: unknown) {
@@ -1602,19 +1589,34 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cmdQuery, currentModel.label, i]);
 
+  // Recompute greeting periodically (hour boundaries)
+  useEffect(() => {
+    setGreetingTick((t) => t + 1);
+    const id = window.setInterval(() => {
+      setGreetingTick((t) => t + 1);
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const getGreeting = () => {
+    void greetingTick; // depend on tick so hour changes re-render
     const hrs = new Date().getHours();
     const displayName = user?.name ? `, ${user.name}` : "";
-    if (hrs < 12) return `${i.goodMorning}${displayName}`;
-    if (hrs < 15) return `${i.goodAfternoon}${displayName}`;
-    if (hrs < 18) return `${i.goodEvening}${displayName}`;
+    // Natural day parts: afternoon until 18:00, then evening
+    if (hrs >= 5 && hrs < 12) return `${i.goodMorning}${displayName}`;
+    if (hrs >= 12 && hrs < 18) return `${i.goodAfternoon}${displayName}`;
+    if (hrs >= 18 && hrs < 22) return `${i.goodEvening}${displayName}`;
     return `${i.goodNight}${displayName}`;
   };
+
+  const detectedKeyProvider = apiKeyDraft.trim()
+    ? detectProviderFromKey(apiKeyDraft)
+    : null;
 
   const isFocus = viewTab === "focus";
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div className="app-shell relative h-screen w-screen overflow-hidden">
       <AnimatePresence>
         {(!ready || !user) && (
           <motion.div
@@ -1683,8 +1685,10 @@ export default function Home() {
         }}
       />
 
-      {/* Left rail — history + templates only (no duplicate chat/attach) */}
-      <nav className={`glass-rail fixed bottom-4 left-4 top-[4.75rem] z-50 flex w-20 flex-col items-center gap-4 rounded-2xl py-7 transition-all duration-300 ${isFocus ? "-translate-x-28 opacity-0 pointer-events-none" : ""}`}>
+      {/* Left rail — desktop; hidden on portrait (use mobile bottom bar) */}
+      <nav
+        className={`glass-rail desktop-rail fixed bottom-4 left-4 top-[4.75rem] z-50 flex w-20 flex-col items-center gap-4 rounded-2xl py-7 transition-all duration-300 ${isFocus ? "-translate-x-28 opacity-0 pointer-events-none" : ""}`}
+      >
         <button
           type="button"
           className={`rail-btn ${viewTab === "collaborate" && sheet === "none" ? "active" : ""}`}
@@ -1716,6 +1720,62 @@ export default function Home() {
           <Wand2 className="h-5 w-5" />
         </button>
         <div className="mt-auto" />
+      </nav>
+
+      {/* Portrait / mobile bottom navigation */}
+      <nav
+        className={`mobile-bottom-nav ${isFocus ? "is-hidden" : ""}`}
+        aria-label="Mobile navigation"
+      >
+        <button
+          type="button"
+          className={`mobile-nav-item ${viewTab === "collaborate" && sheet === "none" ? "active" : ""}`}
+          onClick={() => {
+            setViewTab("collaborate");
+            setSheet("none");
+            setAssistantOpen(true);
+          }}
+        >
+          <LayoutDashboard className="h-5 w-5" />
+          <span>{i.collaborate}</span>
+        </button>
+        <button
+          type="button"
+          className={`mobile-nav-item ${viewTab === "focus" ? "active" : ""}`}
+          onClick={() => {
+            setViewTab("focus");
+            setSheet("none");
+          }}
+        >
+          <Target className="h-5 w-5" />
+          <span>{i.focus}</span>
+        </button>
+        <button
+          type="button"
+          className={`mobile-nav-item ${sheet === "templates" ? "active" : ""}`}
+          onClick={() =>
+            setSheet(sheet === "templates" ? "none" : "templates")
+          }
+        >
+          <Wand2 className="h-5 w-5" />
+          <span>{i.templates}</span>
+        </button>
+        <button
+          type="button"
+          className={`mobile-nav-item ${sheet === "library" ? "active" : ""}`}
+          onClick={() => setSheet(sheet === "library" ? "none" : "library")}
+        >
+          <FolderOpen className="h-5 w-5" />
+          <span>{i.history}</span>
+        </button>
+        <button
+          type="button"
+          className={`mobile-nav-item ${sheet === "settings" ? "active" : ""}`}
+          onClick={() => openSettings()}
+        >
+          <Settings className="h-5 w-5" />
+          <span>{i.settings}</span>
+        </button>
       </nav>
 
       {/* Full-width top navbar */}
@@ -1800,9 +1860,25 @@ export default function Home() {
       </header>
 
       {/* Centered chat — main conversation */}
-      <main className={`chat-main absolute inset-0 flex flex-col pt-16 transition-all duration-300 ${isFocus ? "pl-4 pr-4 sm:pl-8 sm:pr-8" : "pl-20 sm:pl-24"} ${isFocus && focusCanvasOpen ? "focus-has-canvas" : ""}`}>
-        <div className={isFocus && focusCanvasOpen ? "focus-split" : "flex flex-1 min-h-0 flex-col"}>
-        <div className={isFocus && focusCanvasOpen ? "focus-split-chat" : "flex flex-1 min-h-0 flex-col"}>
+      <main
+        className={`chat-main absolute inset-0 flex flex-col pt-16 transition-all duration-300 ${
+          isFocus ? "pl-3 pr-3 sm:pl-8 sm:pr-8 is-focus-main" : "pl-3 sm:pl-24"
+        } ${isFocus && focusCanvasOpen ? "focus-has-canvas" : ""}`}
+      >
+        <div
+          className={
+            isFocus && focusCanvasOpen
+              ? "focus-split"
+              : "flex flex-1 min-h-0 flex-col"
+          }
+        >
+        <div
+          className={
+            isFocus && focusCanvasOpen
+              ? "focus-split-chat"
+              : "flex flex-1 min-h-0 flex-col"
+          }
+        >
         <div
           ref={listRef}
           className={`chat-scroll scroll-thin flex-1 overflow-y-auto overflow-x-hidden ${chatDensity === "compact" ? "chat-dense" : ""}`}
@@ -2559,9 +2635,11 @@ export default function Home() {
         </div>
         </div>{/* end focus-split-chat / chat column stack */}
 
-        {/* Focus canvas — code + interactive visual editor */}
+        {/* Focus canvas — rounded panel, clear preview/code split, clear of navbar */}
         {isFocus && focusCanvasOpen && (
-          <aside className="focus-canvas-panel">
+          <aside
+            className={`focus-canvas-panel ${canvasIsHtml ? "has-visual" : ""}`}
+          >
             <div className="focus-canvas-head">
               <div className="min-w-0">
                 <p className="text-[12px] font-semibold text-[var(--on-surface)] flex items-center gap-1.5">
@@ -2593,17 +2671,26 @@ export default function Home() {
             </div>
             {canvasIsHtml ? (
               <div className="focus-canvas-split">
-                <VisualPreview
-                  html={htmlFromCanvas(focusCanvasText)}
-                  onHtmlChange={(html) => setFocusCanvasText(canvasFromHtml(html))}
-                  className="focus-visual"
-                />
-                <textarea
-                  className="focus-canvas-editor scroll-thin code-half"
-                  value={focusCanvasText}
-                  onChange={(e) => setFocusCanvasText(e.target.value)}
-                  spellCheck={false}
-                />
+                <div className="focus-visual-wrap">
+                  <span className="focus-pane-label">{i.preview}</span>
+                  <VisualPreview
+                    html={htmlFromCanvas(focusCanvasText)}
+                    onHtmlChange={(html) =>
+                      setFocusCanvasText(canvasFromHtml(html))
+                    }
+                    className="focus-visual"
+                  />
+                </div>
+                <div className="focus-canvas-divider" aria-hidden />
+                <div className="focus-code-wrap">
+                  <span className="focus-pane-label">{i.code}</span>
+                  <textarea
+                    className="focus-canvas-editor scroll-thin code-half"
+                    value={focusCanvasText}
+                    onChange={(e) => setFocusCanvasText(e.target.value)}
+                    spellCheck={false}
+                  />
+                </div>
               </div>
             ) : (
               <textarea
@@ -2622,7 +2709,7 @@ export default function Home() {
         <button
           type="button"
           onClick={() => setViewTab("collaborate")}
-          className="fixed top-4 right-4 z-[70] flex items-center gap-2 rounded-full border border-[var(--outline-variant)]/40 bg-[var(--surface-container-lowest)]/80 backdrop-blur-md px-3.5 py-1.5 text-[12px] font-semibold text-[var(--on-surface-variant)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--on-surface)]"
+          className="exit-focus-chip fixed top-4 right-4 z-[70] flex items-center gap-2 rounded-full border border-[var(--outline-variant)]/40 bg-[var(--surface-container-lowest)]/80 backdrop-blur-md px-3.5 py-1.5 text-[12px] font-semibold text-[var(--on-surface-variant)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--on-surface)]"
         >
           <X className="h-3.5 w-3.5" />
           <span>{i.exitFocus}</span>
@@ -2983,7 +3070,7 @@ ${bodyHtml}
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 36 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sheet-header">
@@ -3112,7 +3199,7 @@ ${bodyHtml}
               initial={{ opacity: 0, y: 12, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              transition={{ type: "spring", stiffness: 400, damping: 34 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-2 border-b border-[var(--outline-variant)]/40 px-4 py-3">
@@ -3146,108 +3233,121 @@ ${bodyHtml}
         )}
       </AnimatePresence>
 
-      {/* Templates — light sheet, no heavy animation (perf) */}
-      {sheet === "templates" && (
-        <div className="overlay" onClick={() => setSheet("none")}>
-          <div
-            className="sheet templates-sheet templates-sheet-lite"
-            onClick={(e) => e.stopPropagation()}
+      {/* Templates — same sheet animation as others, lightweight tween (no spring jank) */}
+      <AnimatePresence>
+        {sheet === "templates" && (
+          <motion.div
+            className="overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            onClick={() => setSheet("none")}
           >
-            <div className="sheet-header">
-              <div>
-                <h2 className="sheet-title">{i.templatesTitle}</h2>
-                <p className="sheet-sub">{i.templatesSub}</p>
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => setSheet("none")}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="border-b border-[var(--outline-variant)]/25 px-5 py-3">
-              <div className="chip-row">
-                {templateCategories.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setTemplateCat(c.id)}
-                    className={`cat-chip ${templateCat === c.id ? "active" : ""}`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {(() => {
-              const selected =
-                visibleTemplates.find((t) => t.id === previewTemplateId) ||
-                visibleTemplates[0] ||
-                null;
-              return (
-                <div className="templates-layout-lite">
-                  <div className="templates-list scroll-thin">
-                    {visibleTemplates.map((t) => {
-                      const Icon = TEMPLATE_KIND_ICONS[t.kind] || FileText;
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setPreviewTemplateId(t.id)}
-                          onDoubleClick={() => applyTemplate(t)}
-                          className={`template-card-lite ${
-                            selected?.id === t.id ? "active" : ""
-                          }`}
-                        >
-                          <Icon className="h-4 w-4 shrink-0 opacity-70" />
-                          <div className="min-w-0 text-left">
-                            <span className="t-title block">{t.title}</span>
-                            <span className="t-desc line-clamp-1 block">
-                              {t.category} · {t.badge}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="template-detail-lite">
-                    {selected ? (
-                      <>
-                        <h3 className="text-[16px] font-semibold tracking-tight">
-                          {selected.title}
-                        </h3>
-                        <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
-                          {selected.description}
-                        </p>
-                        <p className="mt-3 text-[12px] text-[var(--on-surface-variant)]">
-                          {selected.preview.input}
-                        </p>
-                        <button
-                          type="button"
-                          className="btn-primary mt-5 !h-10 !px-5 text-[13px]"
-                          onClick={() => applyTemplate(selected)}
-                        >
-                          {i.useTemplate}
-                        </button>
-                        <p className="mt-2 text-[11px] text-[var(--on-surface-variant)]">
-                          {i.templateOpensCanvas}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-[13px] text-[var(--on-surface-variant)]">
-                        {i.templatePreviewEmpty}
-                      </p>
-                    )}
-                  </div>
+            <motion.div
+              className="sheet templates-sheet templates-sheet-lite"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sheet-header">
+                <div>
+                  <h2 className="sheet-title">{i.templatesTitle}</h2>
+                  <p className="sheet-sub">{i.templatesSub}</p>
                 </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setSheet("none")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="border-b border-[var(--outline-variant)]/25 px-5 py-3">
+                <div className="chip-row">
+                  {templateCategories.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setTemplateCat(c.id)}
+                      className={`cat-chip ${templateCat === c.id ? "active" : ""}`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const selected =
+                  visibleTemplates.find((t) => t.id === previewTemplateId) ||
+                  visibleTemplates[0] ||
+                  null;
+                return (
+                  <div className="templates-layout-lite">
+                    <div className="templates-list scroll-thin">
+                      {visibleTemplates.map((t) => {
+                        const Icon = TEMPLATE_KIND_ICONS[t.kind] || FileText;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setPreviewTemplateId(t.id)}
+                            onDoubleClick={() => applyTemplate(t)}
+                            className={`template-card-lite ${
+                              selected?.id === t.id ? "active" : ""
+                            }`}
+                          >
+                            <Icon className="h-4 w-4 shrink-0 opacity-70" />
+                            <div className="min-w-0 text-left">
+                              <span className="t-title block">{t.title}</span>
+                              <span className="t-desc line-clamp-1 block">
+                                {t.category} · {t.badge}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="template-detail-lite">
+                      {selected ? (
+                        <>
+                          <h3 className="text-[16px] font-semibold tracking-tight">
+                            {selected.title}
+                          </h3>
+                          <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
+                            {selected.description}
+                          </p>
+                          <p className="mt-3 text-[12px] text-[var(--on-surface-variant)]">
+                            {selected.preview.input}
+                          </p>
+                          <button
+                            type="button"
+                            className="btn-primary mt-5 !h-10 !px-5 text-[13px]"
+                            onClick={() => applyTemplate(selected)}
+                          >
+                            {i.useTemplate}
+                          </button>
+                          <p className="mt-2 text-[11px] text-[var(--on-surface-variant)]">
+                            {i.templateOpensCanvas}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[13px] text-[var(--on-surface-variant)]">
+                          {i.templatePreviewEmpty}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Global file drop overlay */}
       <AnimatePresence>
@@ -3283,7 +3383,7 @@ ${bodyHtml}
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 36 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sheet-header">
@@ -3359,7 +3459,7 @@ ${bodyHtml}
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 36 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sheet-header">
@@ -3445,7 +3545,7 @@ ${bodyHtml}
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 36 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sheet-header">
@@ -3497,7 +3597,7 @@ ${bodyHtml}
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 36 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sheet-header">
@@ -3724,45 +3824,70 @@ ${bodyHtml}
                         />
                       </div>
                       <div>
-                        <p className="label mb-1">{i.universalApiKeys}</p>
-                        <p className="mb-3 text-[12px] text-[var(--on-surface-variant)]">
+                        <label className="label flex items-center gap-2">
+                          {i.universalApiKeys}
+                          {user.hasApiKey && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--on-tertiary-container)]">
+                              {i.connected}
+                            </span>
+                          )}
+                        </label>
+                        <p className="mb-2 text-[12px] text-[var(--on-surface-variant)]">
                           {i.universalApiKeysHint}
                         </p>
-                        <div className="space-y-3">
-                          {PROVIDERS.map((p) => {
-                            const connected = Boolean(user.providers?.[p.id]);
-                            return (
-                              <div key={p.id}>
-                                <label className="label flex items-center gap-2">
-                                  {p.label}
-                                  {connected && (
-                                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--on-tertiary-container)]">
-                                      {i.connected}
-                                    </span>
-                                  )}
-                                </label>
-                                <input
-                                  className="field font-mono text-[13px]"
-                                  type="password"
-                                  value={apiKeyDrafts[p.id]}
-                                  onChange={(e) =>
-                                    setApiKeyDrafts((prev) => ({
-                                      ...prev,
-                                      [p.id]: e.target.value,
-                                    }))
-                                  }
-                                  placeholder={
-                                    connected ? i.replaceKey : p.placeholder
-                                  }
-                                  autoComplete="off"
-                                />
-                                <p className="mt-1 text-[11px] text-[var(--on-surface-variant)]">
-                                  {p.hint}
-                                </p>
-                              </div>
-                            );
-                          })}
+                        <input
+                          className="field font-mono text-[13px]"
+                          type="password"
+                          value={apiKeyDraft}
+                          onChange={(e) => setApiKeyDraft(e.target.value)}
+                          placeholder={
+                            user.hasApiKey
+                              ? i.replaceKey
+                              : "sk-… / gsk_… / AIza… / sk-ant-…"
+                          }
+                          autoComplete="off"
+                        />
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] text-[var(--on-surface-variant)]">
+                            {i.providerDetect}:{" "}
+                            <strong className="text-[var(--on-surface)]">
+                              {providerOverride !== "auto"
+                                ? PROVIDERS.find((p) => p.id === providerOverride)
+                                    ?.label
+                                : detectedKeyProvider
+                                  ? PROVIDERS.find(
+                                      (p) => p.id === detectedKeyProvider
+                                    )?.label
+                                  : apiKeyDraft.trim()
+                                    ? i.providerUnknown
+                                    : "—"}
+                            </strong>
+                          </span>
+                          <select
+                            className="agent-model-select !border !border-[var(--outline-variant)]/50 !px-2 !py-1"
+                            value={providerOverride}
+                            onChange={(e) =>
+                              setProviderOverride(
+                                e.target.value as ProviderId | "auto"
+                              )
+                            }
+                          >
+                            <option value="auto">{i.providerAuto}</option>
+                            {PROVIDERS.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.label}
+                              </option>
+                            ))}
+                          </select>
                         </div>
+                        {user.providers && (
+                          <p className="mt-2 text-[11px] text-[var(--on-surface-variant)]">
+                            {i.connectedProviders}:{" "}
+                            {PROVIDERS.filter((p) => user.providers?.[p.id])
+                              .map((p) => p.label)
+                              .join(", ") || "—"}
+                          </p>
+                        )}
                       </div>
                       <p className="text-[12px] text-[var(--on-surface-variant)]">
                         {i.accountHint}
