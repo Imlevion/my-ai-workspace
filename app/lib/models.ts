@@ -1159,6 +1159,80 @@ Best,
       output: "Natural ID + notes on idioms.",
     },
   },
+  {
+    id: "portrait-workflow",
+    category: "Photography",
+    kind: "work",
+    badge: "Workflow",
+    title: "Portrait photography workflow",
+    description:
+      "Complete portrait shoot workflow: concept, prep, shot list, lighting, and post-production.",
+    mode: "plan",
+    openCanvas: true,
+    prompt:
+      "Fill this portrait photography workflow template for the subject and concept I describe. Use the structure as-is and be specific.",
+    scaffold: `# Portrait photography workflow
+
+## Concept
+- Subject:
+- Mood / vibe:
+- Style (editorial / lifestyle / studio / street):
+- Key references (links / descriptions):
+
+## Pre-shoot prep
+- Wardrobe & styling:
+- Makeup & hair:
+- Props:
+- Location recce notes:
+- Permissions / releases needed:
+
+## Shot list
+| # | Shot | Framing / angle | Lighting notes | Priority |
+|---|------|-----------------|----------------|----------|
+| 1 |      |                 |                | P0/P1/P2 |
+| 2 |      |                 |                | P0/P1/P2 |
+| 3 |      |                 |                | P0/P1/P2 |
+| 4 |      |                 |                | P0/P1/P2 |
+| 5 |      |                 |                | P0/P1/P2 |
+
+## Lighting plan
+- Key light:
+- Fill light:
+- Backlight / hair light:
+- Background:
+- Modifiers (softbox / umbrella / grid / etc):
+- Example diagram (description):
+
+## Camera & settings
+- Camera:
+- Lenses:
+- ISO range:
+- Aperture range:
+- Shutter speed range:
+- File format / picture profile:
+
+## Post-production plan
+- Software (Lightroom / Photoshop / etc):
+- Retouching guidelines:
+- Color grade / style:
+- Export specs (size / format / naming):
+
+## Timeline & checklist
+- [ ] Confirm subject availability
+- [ ] Scout location
+- [ ] Prep gear
+- [ ] Create mood board
+- [ ] Send prep guide to subject
+- [ ] Shoot date
+- [ ] Backup files
+- [ ] Cull selects
+- [ ] Edit
+- [ ] Deliver`,
+    preview: {
+      input: "Professional headshot for a software engineer · friendly & approachable",
+      output: "Complete workflow: concept, shot list, lighting plan, and post steps.",
+    },
+  },
 ];
 
 /** Compose the message that goes into the chat input when a template is applied */
