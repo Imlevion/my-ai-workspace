@@ -1094,23 +1094,24 @@ html.theme-animating .btn-ghost {
     display: none !important;
   }
 
+  /* Mobile bottom nav: tighter, smaller */
   .mobile-bottom-nav {
     display: flex;
     position: fixed;
-    left: 0.65rem;
-    right: 0.65rem;
-    bottom: max(0.55rem, env(safe-area-inset-bottom));
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: max(0.4rem, env(safe-area-inset-bottom));
     z-index: 70;
-    align-items: stretch;
+    align-items: center;
     justify-content: space-between;
-    gap: 0.15rem;
-    padding: 0.4rem 0.35rem;
-    border-radius: 1.15rem;
-    background: color-mix(in srgb, var(--surface-container-lowest) 92%, transparent);
-    border: 1px solid color-mix(in srgb, var(--outline-variant) 45%, transparent);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    gap: 0.1rem;
+    padding: 0.3rem 0.25rem;
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--surface-container-lowest) 94%, transparent);
+    border: 1px solid color-mix(in srgb, var(--outline-variant) 35%, transparent);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
   .mobile-bottom-nav.is-hidden {
     opacity: 0;
@@ -1123,15 +1124,19 @@ html.theme-animating .btn-ghost {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.15rem;
+    gap: 0.08rem;
     min-width: 0;
-    padding: 0.35rem 0.15rem;
-    border-radius: 0.75rem;
-    font-size: 9.5px;
+    padding: 0.3rem 0.1rem;
+    border-radius: 0.6rem;
+    font-size: 8.5px;
     font-weight: 600;
     letter-spacing: 0.01em;
     color: var(--on-surface-variant);
     transition: background 0.15s ease, color 0.15s ease;
+  }
+  .mobile-nav-item svg {
+    width: 18px !important;
+    height: 18px !important;
   }
   .mobile-nav-item span {
     max-width: 100%;
@@ -1141,82 +1146,128 @@ html.theme-animating .btn-ghost {
   }
   .mobile-nav-item.active {
     color: var(--on-surface);
-    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
   }
 
+  /* Top header: tighter */
   .glass-header {
-    height: 3.25rem !important;
-    padding-left: 0.85rem !important;
-    padding-right: 0.75rem !important;
+    height: 2.9rem !important;
+    padding-left: 0.7rem !important;
+    padding-right: 0.6rem !important;
   }
   .glass-header h1 {
-    font-size: 17px !important;
+    font-size: 16px !important;
+  }
+  .glass-header .icon-btn {
+    width: 32px !important;
+    height: 32px !important;
   }
 
+  /* Chat main: tighter padding */
   .chat-main {
-    padding-top: 3.25rem !important;
-    padding-left: 0.5rem !important;
-    padding-right: 0.5rem !important;
+    padding-top: 2.9rem !important;
+    padding-left: 0.4rem !important;
+    padding-right: 0.4rem !important;
     padding-bottom: 0 !important;
-  }
-  .chat-main:not(.is-focus-main) {
-    /* room for mobile nav + composer */
   }
 
   .chat-column {
-    padding: 0.75rem 0.65rem 0.25rem !important;
+    padding: 0.6rem 0.5rem 0.15rem !important;
     max-width: 100%;
   }
   .chat-empty {
-    min-height: min(48vh, 380px);
-    padding-bottom: 1rem;
+    min-height: min(42vh, 340px);
+    padding-bottom: 0.8rem;
   }
   .chat-empty-title {
-    font-size: 1.45rem !important;
+    font-size: 1.3rem !important;
+  }
+  .chat-empty-sub {
+    font-size: 14px !important;
   }
 
+  /* Composer bar: room for tighter mobile nav/dock */
   .chat-composer-bar {
-    /* room for mobile bottom nav + dock */
-    padding-bottom: 8.5rem !important;
+    padding-bottom: 7.5rem !important;
   }
 
+  /* Bottom dock: smaller, tighter */
   .bottom-dock {
-    bottom: 4.35rem !important;
+    bottom: 3.8rem !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
-    max-width: calc(100vw - 1.5rem);
-    scale: 0.92;
+    max-width: calc(100vw - 1.2rem);
+    scale: 0.88;
+    padding: 0.45rem 0.8rem !important;
   }
   .bottom-dock.with-rail {
     left: 50% !important;
   }
+  .dock-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .dock-label {
+    font-size: 9px;
+  }
 
+  /* Agent team UI: tighter */
   .agent-team {
     margin-left: 0;
     margin-right: 0;
-    border-radius: 0.85rem;
-    padding: 0.55rem 0.6rem;
+    border-radius: 0.75rem;
+    padding: 0.45rem 0.5rem;
   }
   .agent-row {
     grid-template-columns: auto 1fr;
+    padding: 0.5rem 0.55rem !important;
   }
   .agent-actions {
     flex-direction: row;
     grid-column: 1 / -1;
     justify-content: flex-end;
   }
+  .agent-name {
+    font-size: 12px !important;
+  }
+  .agent-model-select {
+    font-size: 10px !important;
+    padding: 0.12rem 0.35rem !important;
+  }
+  .agent-task-input {
+    font-size: 11px !important;
+    padding: 0.3rem 0.45rem !important;
+    min-height: 2rem !important;
+  }
+  .agent-role-badge {
+    font-size: 9px !important;
+    padding: 0.1rem 0.4rem !important;
+  }
 
+  /* Sheets: better portrait sizing */
   .sheet {
     width: 100vw !important;
     max-width: 100vw !important;
-    border-radius: 1rem 1rem 0 0 !important;
+    border-radius: 0.9rem 0.9rem 0 0 !important;
     border-left: 0 !important;
-    height: min(92dvh, 100%) !important;
+    height: min(88dvh, 100%) !important;
     margin-top: auto;
     align-self: flex-end;
   }
   .sheet.templates-sheet {
     width: 100vw !important;
+  }
+  .sheet-header {
+    padding: 18px 18px 12px !important;
+  }
+  .sheet-title {
+    font-size: 17px !important;
+  }
+  .sheet-sub {
+    font-size: 12.5px !important;
+  }
+  .sheet-body {
+    padding: 12px 18px 24px !important;
   }
   .overlay {
     align-items: flex-end;
@@ -1226,22 +1277,50 @@ html.theme-animating .btn-ghost {
   }
   .templates-layout-lite .templates-list {
     border-right: 0;
-    max-height: 38vh;
+    max-height: 36vh;
   }
   .template-detail-lite {
     max-height: none;
     border-top: 1px solid color-mix(in srgb, var(--outline-variant) 30%, transparent);
   }
 
+  /* Focus canvas panel: smaller portrait height */
   .focus-canvas-panel {
-    border-radius: 1rem;
-    max-height: min(50dvh, 360px);
+    border-radius: 0.9rem;
+    max-height: min(46dvh, 320px);
   }
 
-  /* Exit focus chip: avoid notch / status bar */
+  /* Chat avatar, bubbles: smaller */
+  .chat-avatar {
+    width: 26px !important;
+    height: 26px !important;
+  }
+  .chat-bubble-ai, .chat-bubble-user {
+    padding: 10px 12px !important;
+    border-radius: 14px !important;
+  }
+  .chat-bubble-ai .msg-prose,
+  .user-msg-p {
+    font-size: 14px !important;
+  }
+  .chat-role {
+    font-size: 11px !important;
+  }
+  .node-code {
+    border-radius: 14px !important;
+  }
+  .node-code-head {
+    padding: 0.55rem 0.9rem !important;
+  }
+  .empty-template-chip {
+    padding: 0.3rem 0.65rem !important;
+    font-size: 11px !important;
+  }
+
+  /* Exit focus chip: avoid notch, tighter */
   .exit-focus-chip {
-    top: max(0.65rem, env(safe-area-inset-top)) !important;
-    right: 0.65rem !important;
+    top: max(0.55rem, env(safe-area-inset-top)) !important;
+    right: 0.55rem !important;
   }
 }
 
