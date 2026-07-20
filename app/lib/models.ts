@@ -1,38 +1,11 @@
-export const GROQ_MODELS = [
-  {
-    id: "llama-3.3-70b-versatile",
-    label: "Llama 3.3 70B",
-    tagline: "Balanced · deep reasoning",
-    speed: "Standard",
-    tier: "Flagship",
-  },
-  {
-    id: "llama-3.1-8b-instant",
-    label: "Llama 3.1 8B",
-    tagline: "Instant replies · everyday use",
-    speed: "Fast",
-    tier: "Speed",
-  },
-  {
-    id: "openai/gpt-oss-120b",
-    label: "GPT-OSS 120B",
-    tagline: "Large context · complex tasks",
-    speed: "Standard",
-    tier: "Scale",
-  },
-  {
-    id: "qwen/qwen3-32b",
-    label: "Qwen3 32B",
-    tagline: "Multilingual · sharp coding",
-    speed: "Standard",
-    tier: "Code",
-  },
-] as const;
+// Re-export model catalog (multi-provider). Prefer modelsForKeys() for UI.
+export { ALL_MODELS, GROQ_MODELS, type ModelDef } from "./providers";
+import { ALL_MODELS, GROQ_MODELS } from "./providers";
 
 export const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 
-/** Max concurrent agents = number of distinct models from the API provider */
-export const MAX_AGENTS = GROQ_MODELS.length;
+/** Soft cap — hard limit is maxAgentsForKeys() based on connected API keys */
+export const MAX_AGENTS = 6;
 
 export const DEFAULT_SYSTEM_PROMPT =
   "You are Construct, a precise and elegant AI assistant. Be clear, structured, and useful. When writing code, use fenced markdown blocks with a language tag.";
@@ -141,104 +114,71 @@ export type AgentRoleDef = {
 };
 
 /**
- * Default multi-agent team for Collaborate mode.
- * Each agent has a hard specialty + deliverable so orchestration is not vague.
- * Models are unique across the team (1 agent per available provider model by default).
+ * Default multi-agent team — fully customizable.
+ * Users define each agent's name, function (role), and task.
  */
 export const DEFAULT_AGENTS: AgentRoleDef[] = [
   {
-    id: "agent-architect",
-    name: "Architect",
+    id: "agent-1",
+    name: "Agent 1",
     model: "llama-3.3-70b-versatile",
-    role: "Scope · plan · structure",
-    deliverable:
-      "Problem framing, assumptions, approach outline, success criteria, and a clear brief for the Builder.",
-    defaultTask:
-      "Frame the user request: goal, constraints, assumptions, and a step-by-step approach. End with a concrete brief the Builder can execute without guessing.",
+    role: "Plan and structure the approach",
+    deliverable: "",
+    defaultTask: "",
     color: "#60a5fa",
     task: "",
     enabled: true,
   },
   {
-    id: "agent-builder",
-    name: "Builder",
+    id: "agent-2",
+    name: "Agent 2",
     model: "qwen/qwen3-32b",
-    role: "Implement · ship deliverables",
-    deliverable:
-      "Complete artifacts: code, copy, tables, or specs ready to use — not just advice.",
-    defaultTask:
-      "Execute the Architect brief. Produce complete, usable deliverables (full code in fenced blocks, full drafts, or finished specs). No half answers.",
+    role: "Build the main deliverable",
+    deliverable: "",
+    defaultTask: "",
     color: "#34d399",
     task: "",
     enabled: true,
   },
-  {
-    id: "agent-reviewer",
-    name: "Reviewer",
-    model: "openai/gpt-oss-120b",
-    role: "Critique · risks · polish",
-    deliverable:
-      "Quality review: bugs/risks, gaps, and a short prioritized fix list.",
-    defaultTask:
-      "Review the Builder output against the original request. List strengths, issues (severity first), and concrete fixes. Do not redo the whole deliverable unless a critical rewrite is needed.",
-    color: "#fbbf24",
-    task: "",
-    enabled: true,
-  },
 ];
 
-/** Optional 4th role when user adds up to MAX_AGENTS */
-export const EXTRA_AGENT_PRESETS: Omit<AgentRoleDef, "id" | "model">[] = [
-  {
-    name: "Researcher",
-    role: "Facts · options · evidence",
-    deliverable:
-      "Background options, trade-offs table, and sources/assumptions to ground the plan.",
-    defaultTask:
-      "Gather and structure the key facts, options, and trade-offs needed before building. Flag unknowns clearly.",
-    color: "#a78bfa",
-    task: "",
-    enabled: true,
-  },
-  {
-    name: "Editor",
-    role: "Clarity · tone · structure",
-    deliverable:
-      "Polished final wording or a tightened version of the prior deliverable.",
-    defaultTask:
-      "Tighten clarity, tone, and structure of the latest deliverable. Preserve meaning; make it audience-ready.",
-    color: "#f472b6",
-    task: "",
-    enabled: true,
-  },
+const AGENT_COLORS = [
+  "#60a5fa",
+  "#34d399",
+  "#fbbf24",
+  "#a78bfa",
+  "#f472b6",
+  "#38bdf8",
 ];
 
-export function nextAvailableModel(usedModels: string[]): string {
-  const free = GROQ_MODELS.find((m) => !usedModels.includes(m.id));
-  return free?.id || GROQ_MODELS[usedModels.length % GROQ_MODELS.length].id;
+export function nextAvailableModel(
+  usedModels: string[],
+  availableIds?: string[]
+): string {
+  const pool =
+    availableIds && availableIds.length
+      ? availableIds
+      : ALL_MODELS.map((m) => m.id);
+  const free = pool.find((id) => !usedModels.includes(id));
+  return free || pool[usedModels.length % pool.length] || DEFAULT_MODEL;
 }
 
 export function createAgentSlot(
-  existing: AgentRoleDef[]
+  existing: AgentRoleDef[],
+  opts?: { max?: number; availableModelIds?: string[] }
 ): AgentRoleDef | null {
-  if (existing.length >= MAX_AGENTS) return null;
+  const max = opts?.max ?? MAX_AGENTS;
+  if (existing.length >= max) return null;
   const used = existing.map((a) => a.model);
-  const preset =
-    EXTRA_AGENT_PRESETS[existing.length - DEFAULT_AGENTS.length] ||
-    EXTRA_AGENT_PRESETS[EXTRA_AGENT_PRESETS.length - 1];
   const n = existing.length + 1;
   return {
     id: `agent-${Date.now()}`,
-    name: preset?.name || `Agent ${n}`,
-    model: nextAvailableModel(used),
-    role: preset?.role || "Specialist perspective",
-    deliverable:
-      preset?.deliverable ||
-      "A focused contribution that complements the other agents.",
-    defaultTask:
-      preset?.defaultTask ||
-      "Contribute your specialty clearly; avoid duplicating other agents.",
-    color: preset?.color || ["#38bdf8", "#fb923c", "#a78bfa", "#f472b6"][n % 4],
+    name: `Agent ${n}`,
+    model: nextAvailableModel(used, opts?.availableModelIds),
+    role: "",
+    deliverable: "",
+    defaultTask: "",
+    color: AGENT_COLORS[n % AGENT_COLORS.length],
     task: "",
     enabled: true,
   };
@@ -273,27 +213,31 @@ export function buildAgentTurnPrompt(opts: {
     "Contribute your specialty to the shared user request.";
 
   const pipelineHint = isFirst
-    ? "You are FIRST in the pipeline. Set a clear foundation. Do not wait for others."
+    ? "You are FIRST in the pipeline. Set a clear foundation for teammates."
     : isLast
-      ? "You are LAST in the pipeline. Synthesize quality and close gaps. Prefer actionable fixes over restating everything."
-      : "You are MID-pipeline. Build on prior teammates; do not re-plan from zero unless their work is unusable.";
+      ? "You are LAST in the pipeline. Finish cleanly; prefer actionable output."
+      : "You are MID-pipeline. Build on prior teammates when useful.";
+
+  const functionLine =
+    agent.role?.trim() ||
+    "Do what the assigned task asks. Stay focused and concrete.";
 
   const system = `${baseSystem}
 
 ══════════════════════════════════════
-MULTI-AGENT COLLABORATE · STRICT ROLE
+MULTI-AGENT COLLABORATE · CUSTOM ROLE
 ══════════════════════════════════════
 You are agent "${agent.name}" (${phase} of ${agentCount}).
-Specialty: ${agent.role}
-Required deliverable: ${agent.deliverable || "Your specialty contribution only."}
+Your function (defined by the user): ${functionLine}
+${agent.deliverable?.trim() ? `Expected output shape: ${agent.deliverable.trim()}` : ""}
 ${pipelineHint}
 
 RULES:
 1. Respond ONLY as ${agent.name}. Never write sections for other agents.
-2. Stay inside your specialty. If something is out of scope, note it briefly and hand off.
+2. Follow YOUR function and assigned task — do not invent a different job.
 3. Be concrete and usable — no filler, no role-play chatter.
-4. If prior teammate output exists, USE it; do not ignore or rewrite their whole section unless critical.
-5. Structure your answer with a short heading matching your name, then the deliverable.
+4. If prior teammate output exists, USE it when relevant.
+5. Structure with a short heading matching your name, then your work.
 ${priorContext ? `\nPrior teammates already produced (context only):\n${priorContext.slice(0, 7000)}` : "No prior teammate output yet."}`;
 
   const user = `## Shared user request
@@ -302,7 +246,7 @@ ${userRequest}
 ## Your assigned task this turn
 ${assigned}
 
-Produce only your deliverable now.`;
+Produce only your contribution now.`;
 
   return { system, user, assigned };
 }

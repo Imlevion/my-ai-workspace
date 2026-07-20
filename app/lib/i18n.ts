@@ -126,26 +126,28 @@ const en = {
 
   // Templates
   templatesTitle: "Templates",
-  templatesSub:
-    "Real scaffolds — websites, analysis frameworks, PRDs, and more. Not just prompts.",
+  templatesSub: "Pick a starter, then edit it live on the canvas.",
   workMode: "Work mode",
   all: "All",
   templatePreview: "Preview",
-  templatePreviewEmpty: "Select a template to inspect its scaffold and examples.",
+  templatePreviewEmpty: "Select a template.",
   templateExampleInput: "Example brief",
   templateExampleOutput: "What you get",
   templateScaffold: "Scaffold",
-  useTemplate: "Use this template",
-  templateApplied: "Template loaded — fill your brief and send",
+  useTemplate: "Open in canvas",
+  templateApplied: "Template loaded",
+  templateOpenedCanvas: "Template opened in canvas — edit freely",
+  templateOpensCanvas: "Opens Focus canvas (and visual editor for HTML).",
 
   // Multi-agent
-  agentTeam: "Agent pipeline",
-  agentTeamHint: "Turn on multi-agent to run a specialty pipeline.",
-  agentTaskPlaceholder: "Optional override for this turn…",
+  agentTeam: "Agent team",
+  agentTeamHint: "Define each agent’s job yourself.",
+  agentTaskPlaceholder: "What should this agent do this turn?…",
+  agentRolePlaceholder: "Function — e.g. research, write copy, review…",
   agentName: "Agent name",
   agentPipelineHint:
-    "Agents run in order, each with a fixed specialty. Max {n} agents (one per available model from your API provider).",
-  agentLimitReached: "Max {n} agents — limited by available models on your API key.",
+    "Agents run in order with the function you set. Max {n} (based on models from your API keys).",
+  agentLimitReached: "Max {n} agents — limited by available models from your keys.",
   addAgent: "Add agent",
   removeAgent: "Remove",
   enableAgent: "Toggle agent",
@@ -157,6 +159,11 @@ const en = {
   fileAttachedMany: "Attached {n} files",
   fileTooLarge: "{name} is too large (max {max})",
   noFilesAdded: "No files added",
+  universalApiKeys: "API keys",
+  universalApiKeysHint:
+    "Add keys for the providers you use. Models appear only for connected keys.",
+  modelNeedsKey: "Add an API key in Account to see available models.",
+  visualEditorHint: "Move, resize, recolor in preview — code updates live",
 
   // Focus assets / canvas
   assetDock: "Key takeaways",
@@ -434,26 +441,28 @@ const id: Dict = {
   noChats: "Belum ada percakapan",
 
   templatesTitle: "Template",
-  templatesSub:
-    "Scaffold nyata — website, kerangka analisis, PRD, dan lainnya. Bukan sekadar prompt.",
+  templatesSub: "Pilih starter, lalu edit langsung di kanvas.",
   workMode: "Mode kerja",
   all: "Semua",
   templatePreview: "Pratinjau",
-  templatePreviewEmpty: "Pilih template untuk melihat scaffold dan contohnya.",
+  templatePreviewEmpty: "Pilih template.",
   templateExampleInput: "Contoh brief",
   templateExampleOutput: "Yang kamu dapat",
   templateScaffold: "Scaffold",
-  useTemplate: "Pakai template ini",
-  templateApplied: "Template dimuat — isi brief lalu kirim",
+  useTemplate: "Buka di kanvas",
+  templateApplied: "Template dimuat",
+  templateOpenedCanvas: "Template dibuka di kanvas — edit bebas",
+  templateOpensCanvas: "Membuka Focus canvas (dan editor visual untuk HTML).",
 
-  agentTeam: "Pipeline agent",
-  agentTeamHint: "Aktifkan multi-agent untuk menjalankan pipeline spesialis.",
-  agentTaskPlaceholder: "Override opsional untuk giliran ini…",
+  agentTeam: "Tim agent",
+  agentTeamHint: "Tentukan sendiri tugas tiap agent.",
+  agentTaskPlaceholder: "Apa yang harus dikerjakan agent ini?…",
+  agentRolePlaceholder: "Fungsi — mis. riset, tulis copy, review…",
   agentName: "Nama agent",
   agentPipelineHint:
-    "Agent berjalan berurutan, masing-masing dengan spesialisasi tetap. Maks {n} agent (sesuai jumlah model dari penyedia API key).",
+    "Agent berjalan berurutan sesuai fungsi yang kamu set. Maks {n} (berdasarkan model dari API key).",
   agentLimitReached:
-    "Maks {n} agent — dibatasi model yang tersedia di API key kamu.",
+    "Maks {n} agent — dibatasi model dari API key yang terpasang.",
   addAgent: "Tambah agent",
   removeAgent: "Hapus",
   enableAgent: "Aktifkan agent",
@@ -465,6 +474,11 @@ const id: Dict = {
   fileAttachedMany: "{n} file dilampirkan",
   fileTooLarge: "{name} terlalu besar (maks {max})",
   noFilesAdded: "Tidak ada file yang ditambahkan",
+  universalApiKeys: "API key",
+  universalApiKeysHint:
+    "Tambah key untuk provider yang kamu pakai. Model hanya muncul untuk key yang terhubung.",
+  modelNeedsKey: "Tambah API key di Akun untuk melihat model yang tersedia.",
+  visualEditorHint: "Geser, ubah ukuran, warna di preview — kode ikut update",
 
   assetDock: "Poin penting",
   assetDockEmpty: "Kesimpulan chat biasa muncul di sini.",

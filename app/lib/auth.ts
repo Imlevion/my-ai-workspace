@@ -2,6 +2,14 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
+import {
+  hasAnyApiKey,
+  modelsForKeys,
+  parseProviderKeys,
+  providerFlags,
+  type ProviderId,
+  type ProviderKeys,
+} from "./providers";
 
 const COOKIE = "construct_session";
 
@@ -92,19 +100,28 @@ export async function requireUser(): Promise<SessionUser | null> {
   return user;
 }
 
-export function publicUser(user: SessionUser | {
-  id: string;
-  email: string;
-  name: string;
-  apiKey: string;
-  model: string;
-  theme: string;
-  temperature?: number;
-  maxTokens?: number;
-  systemPrompt?: string;
-  sendWithEnter?: boolean;
-  showCanvas?: boolean;
-}) {
+export function getUserProviderKeys(user: { apiKey?: string | null }): ProviderKeys {
+  return parseProviderKeys(user.apiKey || "");
+}
+
+export function publicUser(
+  user: SessionUser | {
+    id: string;
+    email: string;
+    name: string;
+    apiKey: string;
+    model: string;
+    theme: string;
+    temperature?: number;
+    maxTokens?: number;
+    systemPrompt?: string;
+    sendWithEnter?: boolean;
+    showCanvas?: boolean;
+  }
+) {
+  const keys = parseProviderKeys(user.apiKey || "");
+  const flags = providerFlags(keys);
+  const available = modelsForKeys(keys);
   return {
     id: user.id,
     email: user.email,
@@ -116,6 +133,8 @@ export function publicUser(user: SessionUser | {
     systemPrompt: user.systemPrompt ?? "",
     sendWithEnter: user.sendWithEnter ?? true,
     showCanvas: user.showCanvas ?? true,
-    hasApiKey: Boolean(user.apiKey?.trim()),
+    hasApiKey: hasAnyApiKey(keys),
+    providers: flags as Record<ProviderId, boolean>,
+    availableModels: available.map((m) => m.id),
   };
 }

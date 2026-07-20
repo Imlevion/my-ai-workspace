@@ -1,4 +1,4 @@
-import { requireUser } from "@/app/lib/auth";
+import { requireUser, getUserProviderKeys } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/db";
 import {
   buildAgentTurnPrompt,
@@ -6,6 +6,16 @@ import {
   MAX_AGENTS,
   titleFromText,
 } from "@/app/lib/models";
+import {
+  callProvider,
+  hasAnyApiKey,
+  keyForModel,
+  maxAgentsForKeys,
+  modelById,
+  providerForModel,
+  readAssistantText,
+  type ProviderId,
+} from "@/app/lib/providers";
 
 export const runtime = "nodejs";
 
@@ -19,30 +29,6 @@ type AgentPayload = {
   task?: string;
 };
 
-async function callGroq(opts: {
-  apiKey: string;
-  model: string;
-  messages: { role: string; content: string }[];
-  temperature: number;
-  maxTokens: number;
-  stream?: boolean;
-}) {
-  return fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${opts.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      messages: opts.messages,
-      temperature: opts.temperature,
-      max_tokens: opts.maxTokens,
-      stream: opts.stream ?? false,
-    }),
-  });
-}
-
 export async function POST(req: Request) {
   try {
     const user = await requireUser();
@@ -53,11 +39,12 @@ export async function POST(req: Request) {
       });
     }
 
-    if (!user.apiKey?.trim()) {
+    const keys = getUserProviderKeys(user);
+    if (!hasAnyApiKey(keys)) {
       return new Response(
         JSON.stringify({
           error:
-            "Add your Groq API key in Settings first (same idea as connecting an account API).",
+            "Add at least one API key in Settings (OpenAI, Gemini, Groq, Claude, or Moonshot).",
         }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
@@ -70,6 +57,7 @@ export async function POST(req: Request) {
     const mode = String(body.mode || "auto");
     const stream = body.stream !== false;
     const focusKind = body.focusKind === "technical" ? "technical" : "general";
+    const agentCap = maxAgentsForKeys(keys);
     const agentsRaw = Array.isArray(body.agents) ? body.agents : [];
     const agents: AgentPayload[] = agentsRaw
       .filter(
@@ -80,7 +68,7 @@ export async function POST(req: Request) {
         id: a.id,
         name: String(a.name).slice(0, 40),
         model: String(a.model),
-        role: String(a.role || "Specialist").slice(0, 120),
+        role: String(a.role || "").slice(0, 200),
         deliverable: a.deliverable
           ? String(a.deliverable).slice(0, 400)
           : "",
@@ -89,7 +77,7 @@ export async function POST(req: Request) {
           : "",
         task: a.task ? String(a.task).slice(0, 800) : "",
       }))
-      .slice(0, MAX_AGENTS);
+      .slice(0, Math.min(MAX_AGENTS, agentCap));
 
     if (!chatId || !content) {
       return new Response(
@@ -173,11 +161,7 @@ If the user later asks for code or a long draft, switch to full deliverables.`;
 
     if (viewTab === "collaborate" && agents.length === 0) {
       systemPromptContent += `\n\n[Collaboration Mode]:
-You coordinate a multi-agent pipeline. Structure the answer with clear sections:
-### Architect — frame problem, approach, success criteria
-### Builder — complete usable deliverables (code/drafts/specs)
-### Reviewer — risks, gaps, prioritized fixes
-Each section stays in its specialty. No role-play chatter.`;
+Structure answers clearly. If multiple perspectives help, use short labeled sections. Stay concrete.`;
     }
 
     const historyMsgs = history.map((m) => ({
@@ -188,7 +172,60 @@ Each section stays in its specialty. No role-play chatter.`;
     const temperature = user.temperature ?? 0.7;
     const maxTokens = user.maxTokens ?? 4096;
 
-    // ── Multi-agent orchestration (real multi-model) ──────────────────────
+    async function runModel(opts: {
+      modelId: string;
+      messages: { role: string; content: string }[];
+      temperature: number;
+      maxTokens: number;
+      stream?: boolean;
+    }) {
+      const provider = (providerForModel(opts.modelId) ||
+        "groq") as ProviderId;
+      const apiKey = keyForModel(keys, opts.modelId);
+      if (!apiKey) {
+        return {
+          ok: false as const,
+          error: `No API key for model ${opts.modelId} (${provider}). Add it in Settings.`,
+          text: "",
+          streamRes: null as Response | null,
+        };
+      }
+      // Streaming only for OpenAI-compatible providers
+      const canStream =
+        opts.stream &&
+        (provider === "openai" ||
+          provider === "groq" ||
+          provider === "moonshot");
+
+      const res = await callProvider({
+        provider,
+        apiKey,
+        model: opts.modelId,
+        messages: opts.messages,
+        temperature: opts.temperature,
+        maxTokens: opts.maxTokens,
+        stream: canStream,
+      });
+
+      if (canStream && res.ok) {
+        return {
+          ok: true as const,
+          error: "",
+          text: "",
+          streamRes: res,
+        };
+      }
+
+      const parsed = await readAssistantText(res);
+      return {
+        ok: parsed.ok,
+        error: parsed.error || "",
+        text: parsed.text,
+        streamRes: null as Response | null,
+      };
+    }
+
+    // ── Multi-agent orchestration ─────────────────────────────────────────
     if (viewTab === "collaborate" && agents.length > 0) {
       const encoder = new TextEncoder();
       const readable = new ReadableStream({
@@ -199,28 +236,37 @@ Each section stays in its specialty. No role-play chatter.`;
             );
           };
 
-          send({ type: "meta", userMessage, title: nextTitle, multiAgent: true });
+          send({
+            type: "meta",
+            userMessage,
+            title: nextTitle,
+            multiAgent: true,
+          });
 
           const parts: string[] = [];
           let priorContext = "";
 
           try {
-            // Intro banner so the user sees the pipeline plan
             const roster = agents
               .map(
                 (a, idx) =>
-                  `${idx + 1}. **${a.name}** — ${a.role}${
+                  `${idx + 1}. **${a.name}**${
+                    a.role?.trim() ? ` — ${a.role.trim()}` : ""
+                  }${
                     a.task?.trim() ? ` · _${a.task.trim().slice(0, 80)}_` : ""
                   }`
               )
               .join("\n");
-            const pipelineIntro = `## Multi-agent pipeline\n${roster}\n\n_Each agent runs on its own model with a fixed specialty._\n\n`;
+            const pipelineIntro = `## Multi-agent pipeline\n${roster}\n\n`;
             send({ type: "delta", content: pipelineIntro });
             parts.push(pipelineIntro);
 
             for (let i = 0; i < agents.length; i++) {
               const agent = agents[i];
-              const header = `### ${agent.name}\n_${agent.role} · ${agent.model}_\n\n`;
+              const meta = modelById(agent.model);
+              const header = `### ${agent.name}\n_${
+                agent.role?.trim() || "Custom agent"
+              } · ${meta?.label || agent.model}_\n\n`;
               send({
                 type: "agent_start",
                 agent: {
@@ -248,12 +294,10 @@ Each section stays in its specialty. No role-play chatter.`;
                 priorContext,
               });
 
-              const groqRes = await callGroq({
-                apiKey: user.apiKey!,
-                model: agent.model,
+              const result = await runModel({
+                modelId: agent.model,
                 messages: [
                   { role: "system", content: turn.system },
-                  // Keep recent history for continuity, but agent turn is explicit
                   ...historyMsgs.slice(-6),
                   { role: "user", content: turn.user },
                 ],
@@ -262,22 +306,14 @@ Each section stays in its specialty. No role-play chatter.`;
                 stream: false,
               });
 
-              if (!groqRes.ok) {
-                const data = await groqRes.json().catch(() => ({}));
-                const errMsg =
-                  data.error?.message ||
-                  data.message ||
-                  `${agent.name} failed`;
-                const fail = `_(Agent error: ${errMsg})_`;
+              if (!result.ok) {
+                const fail = `_(Agent error: ${result.error})_`;
                 parts.push(header + fail);
                 send({ type: "delta", content: fail });
                 continue;
               }
 
-              const data = await groqRes.json();
-              const reply =
-                data.choices?.[0]?.message?.content?.trim() ||
-                "_(No response)_";
+              const reply = result.text || "_(No response)_";
               parts.push(header + reply);
               priorContext += `\n\n[${agent.name}]:\n${reply}`;
               send({ type: "delta", content: reply });
@@ -287,7 +323,8 @@ Each section stays in its specialty. No role-play chatter.`;
               });
             }
 
-            const full = parts.join("\n\n").trim() || "No response generated.";
+            const full =
+              parts.join("\n\n").trim() || "No response generated.";
             const assistantMessage = await prisma.message.create({
               data: { chatId, role: "assistant", content: full },
             });
@@ -334,147 +371,173 @@ Each section stays in its specialty. No role-play chatter.`;
       { role: "user", content },
     ];
 
-    const groqRes = await callGroq({
-      apiKey: user.apiKey!,
-      model,
+    const result = await runModel({
+      modelId: model,
       messages: payloadMessages,
       temperature,
       maxTokens,
       stream,
     });
 
-    if (!groqRes.ok) {
-      const data = await groqRes.json().catch(() => ({}));
+    if (!result.ok && !result.streamRes) {
       return new Response(
         JSON.stringify({
-          error:
-            data.error?.message ||
-            data.message ||
-            "Failed to reach Groq API",
+          error: result.error || "Failed to reach model API",
           userMessage,
         }),
         {
-          status: groqRes.status,
+          status: 400,
           headers: { "Content-Type": "application/json" },
         }
       );
     }
 
     if (model && model !== user.model) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { model },
-      });
+      // keep user preference lightly updated
+      prisma.user
+        .update({ where: { id: user.id }, data: { model } })
+        .catch(() => {});
     }
 
-    if (!stream || !groqRes.body) {
-      const data = await groqRes.json();
-      const reply =
-        data.choices?.[0]?.message?.content || "No response generated.";
-      const assistantMessage = await prisma.message.create({
-        data: { chatId, role: "assistant", content: reply },
-      });
-      return new Response(
-        JSON.stringify({
-          userMessage,
-          assistantMessage,
-          title: nextTitle,
-        }),
-        { headers: { "Content-Type": "application/json" } }
-      );
-    }
+    // Streaming OpenAI-compatible
+    if (result.streamRes) {
+      const encoder = new TextEncoder();
+      const reader = result.streamRes.body?.getReader();
+      if (!reader) {
+        return new Response(
+          JSON.stringify({ error: "No stream", userMessage }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
 
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    let full = "";
+      let full = "";
+      const readable = new ReadableStream({
+        async start(controller) {
+          const send = (obj: unknown) => {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)
+            );
+          };
+          send({ type: "meta", userMessage, title: nextTitle });
 
-    const readable = new ReadableStream({
-      async start(controller) {
-        const send = (obj: unknown) => {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)
-          );
-        };
-
-        send({
-          type: "meta",
-          userMessage,
-          title: nextTitle,
-        });
-
-        const reader = groqRes.body!.getReader();
-        let buffer = "";
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n");
-            buffer = parts.pop() || "";
-
-            for (const line of parts) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith("data:")) continue;
-              const payload = trimmed.slice(5).trim();
-              if (payload === "[DONE]") continue;
-              try {
-                const json = JSON.parse(payload);
-                const delta = json.choices?.[0]?.delta?.content;
-                if (delta) {
-                  full += delta;
-                  send({ type: "delta", content: delta });
+          const decoder = new TextDecoder();
+          let buffer = "";
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+              for (const line of lines) {
+                const t = line.trim();
+                if (!t.startsWith("data:")) continue;
+                const payload = t.slice(5).trim();
+                if (payload === "[DONE]") continue;
+                try {
+                  const json = JSON.parse(payload);
+                  const delta =
+                    json.choices?.[0]?.delta?.content ||
+                    json.choices?.[0]?.text ||
+                    "";
+                  if (delta) {
+                    full += delta;
+                    send({ type: "delta", content: delta });
+                  }
+                } catch {
+                  /* skip */
                 }
-              } catch {
-                // skip partial json
               }
             }
+
+            const assistantMessage = await prisma.message.create({
+              data: {
+                chatId,
+                role: "assistant",
+                content: full || "_(No response)_",
+              },
+            });
+            await prisma.chat.update({
+              where: { id: chatId },
+              data: { updatedAt: new Date() },
+            });
+            send({ type: "done", assistantMessage, title: nextTitle });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          } catch (err) {
+            const message =
+              err instanceof Error ? err.message : "Stream failed";
+            if (full) {
+              try {
+                const assistantMessage = await prisma.message.create({
+                  data: { chatId, role: "assistant", content: full },
+                });
+                send({ type: "done", assistantMessage, partial: true });
+              } catch {
+                /* ignore */
+              }
+            }
+            send({ type: "error", error: message });
+            controller.close();
           }
+        },
+      });
 
-          if (!full.trim()) {
-            full = "No response generated.";
-          }
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
+    }
 
-          const assistantMessage = await prisma.message.create({
-            data: { chatId, role: "assistant", content: full },
-          });
+    // Non-stream (Gemini / Anthropic / fallback)
+    const full = result.text || "_(No response)_";
+    const assistantMessage = await prisma.message.create({
+      data: { chatId, role: "assistant", content: full },
+    });
+    await prisma.chat.update({
+      where: { id: chatId },
+      data: { updatedAt: new Date() },
+    });
 
-          await prisma.chat.update({
-            where: { id: chatId },
-            data: { updatedAt: new Date() },
-          });
-
+    if (stream) {
+      // Fake SSE for clients expecting stream
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream({
+        start(controller) {
+          const send = (obj: unknown) => {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)
+            );
+          };
+          send({ type: "meta", userMessage, title: nextTitle });
+          send({ type: "delta", content: full });
           send({ type: "done", assistantMessage, title: nextTitle });
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
-        } catch (err) {
-          const message =
-            err instanceof Error ? err.message : "Stream failed";
-          if (full.trim()) {
-            try {
-              const assistantMessage = await prisma.message.create({
-                data: { chatId, role: "assistant", content: full },
-              });
-              send({ type: "done", assistantMessage, partial: true });
-            } catch {
-              /* ignore */
-            }
-          }
-          send({ type: "error", error: message });
-          controller.close();
-        }
-      },
-    });
+        },
+      });
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
+    }
 
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Server error";
+    return new Response(
+      JSON.stringify({
+        userMessage,
+        assistantMessage,
+        title: nextTitle,
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Chat failed";
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

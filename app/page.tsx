@@ -80,13 +80,14 @@ import {
 import {
   ACCEPTED_MEDIA,
   GROQ_MODELS,
+  ALL_MODELS,
+  DEFAULT_MODEL,
   DEFAULT_SYSTEM_PROMPT,
   WORK_MODES,
   PROBLEM_TEMPLATES,
   DEFAULT_AGENTS,
   MAX_AGENTS,
   createAgentSlot,
-  composeTemplateMessage,
   extractCodeBlocks,
   stripCodeBlocks,
   formatBytes,
@@ -102,6 +103,17 @@ import {
   type ProblemTemplate,
   type TemplateKind,
 } from "./lib/models";
+import {
+  PROVIDERS,
+  maxAgentsForKeys,
+  type ProviderId,
+  type ProviderKeys,
+} from "./lib/providers";
+import {
+  VisualPreview,
+  htmlFromCanvas,
+  canvasFromHtml,
+} from "./components/VisualPreview";
 import { MarkdownBody } from "./lib/markdown";
 import {
   t as i18n,
@@ -122,6 +134,8 @@ type User = {
   sendWithEnter: boolean;
   showCanvas: boolean;
   hasApiKey: boolean;
+  providers?: Record<ProviderId, boolean>;
+  availableModels?: string[];
 };
 
 type ChatItem = {
@@ -363,7 +377,15 @@ export default function Home() {
   const [previewMaximized, setPreviewMaximized] = useState(false);
 
   const [nameDraft, setNameDraft] = useState("");
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [apiKeyDrafts, setApiKeyDrafts] = useState<
+    Record<ProviderId, string>
+  >({
+    openai: "",
+    gemini: "",
+    groq: "",
+    anthropic: "",
+    moonshot: "",
+  });
   const [tempDraft, setTempDraft] = useState(0.7);
   const [tokensDraft, setTokensDraft] = useState(4096);
   const [promptDraft, setPromptDraft] = useState(DEFAULT_SYSTEM_PROMPT);
@@ -552,9 +574,39 @@ export default function Home() {
     return suggestFollowUps(last.content).slice(0, 3);
   }, [messages, loading]);
 
+  const availableModelList = useMemo(() => {
+    if (user?.availableModels?.length) {
+      return ALL_MODELS.filter((m) => user.availableModels!.includes(m.id));
+    }
+    return user?.hasApiKey ? ALL_MODELS : [];
+  }, [user]);
+
+  const agentLimit = useMemo(() => {
+    if (!user?.availableModels?.length) return 1;
+    const pseudo: ProviderKeys = {};
+    if (user.providers) {
+      for (const p of PROVIDERS) {
+        if (user.providers[p.id]) pseudo[p.id] = "1";
+      }
+    }
+    return Math.min(MAX_AGENTS, maxAgentsForKeys(pseudo));
+  }, [user]);
+
   const currentModel =
-    GROQ_MODELS.find((m) => m.id === model) || GROQ_MODELS[0];
+    ALL_MODELS.find((m) => m.id === model) ||
+    availableModelList[0] ||
+    ALL_MODELS[0];
   const currentMode = modeById(mode);
+  const canvasIsHtml = useMemo(() => {
+    const h = htmlFromCanvas(focusCanvasText);
+    return (
+      h.includes("<html") ||
+      h.includes("<!DOCTYPE") ||
+      h.includes("<div") ||
+      h.includes("<section") ||
+      focusCanvasText.includes("```html")
+    );
+  }, [focusCanvasText]);
 
   const templateCategories = useMemo(
     () => [
@@ -597,8 +649,11 @@ export default function Home() {
 
   function applyTheme(themeName: string) {
     const resolved = resolveThemeMode(themeName);
-    document.documentElement.setAttribute("data-theme", resolved);
+    const root = document.documentElement;
+    root.classList.add("theme-animating");
+    root.setAttribute("data-theme", resolved);
     setThemeCookie(themeName);
+    window.setTimeout(() => root.classList.remove("theme-animating"), 320);
   }
 
   useEffect(() => {
@@ -618,7 +673,13 @@ export default function Home() {
 
   function applyUser(u: User) {
     setUser(u);
-    setModel(u.model || GROQ_MODELS[0].id);
+    const avail =
+      u.availableModels && u.availableModels.length
+        ? u.availableModels
+        : GROQ_MODELS.map((m) => m.id);
+    const nextModel =
+      u.model && avail.includes(u.model) ? u.model : avail[0] || DEFAULT_MODEL;
+    setModel(nextModel);
     setNameDraft(u.name);
     setTempDraft(u.temperature ?? 0.7);
     setTokensDraft(u.maxTokens ?? 4096);
@@ -628,6 +689,15 @@ export default function Home() {
     setThemeDraft((u.theme as "dark" | "light" | "system") || "light");
     applyTheme(u.theme || "light");
     setThemeCookie(u.theme || "light");
+    // Sync agent models to available set
+    setAgents((prev) =>
+      prev.map((a, idx) => ({
+        ...a,
+        model: avail.includes(a.model)
+          ? a.model
+          : avail[idx % avail.length] || a.model,
+      }))
+    );
   }
 
   async function loadChat(id: string) {
@@ -920,7 +990,13 @@ export default function Home() {
       setShareData(localStorage.getItem("aura-share-data") === "true");
       setLocalCache(localStorage.getItem("aura-local-cache") !== "false");
     }
-    setApiKeyDraft("");
+    setApiKeyDrafts({
+      openai: "",
+      gemini: "",
+      groq: "",
+      anthropic: "",
+      moonshot: "",
+    });
     setSettingsTab("general");
     setSheet("settings");
   }
@@ -946,6 +1022,12 @@ export default function Home() {
         localStorage.setItem("aura-local-cache", String(localCache));
       }
 
+      const providerKeys: Record<string, string> = {};
+      for (const p of PROVIDERS) {
+        const v = apiKeyDrafts[p.id]?.trim();
+        if (v) providerKeys[p.id] = v;
+      }
+
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -958,14 +1040,22 @@ export default function Home() {
           systemPrompt: promptDraft,
           sendWithEnter: enterDraft,
           showCanvas: canvasDraft,
-          ...(apiKeyDraft.trim() ? { apiKey: apiKeyDraft.trim() } : {}),
+          ...(Object.keys(providerKeys).length
+            ? { providerKeys }
+            : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save");
       applyUser(data.user);
       applyTheme(themeDraft);
-      setApiKeyDraft("");
+      setApiKeyDrafts({
+        openai: "",
+        gemini: "",
+        groq: "",
+        anthropic: "",
+        moonshot: "",
+      });
       setSheet("none");
       showToast(i.saved);
     } catch (e: unknown) {
@@ -1107,7 +1197,7 @@ export default function Home() {
       viewTab === "collaborate" && multiAgentEnabled
         ? agents
             .filter((a) => a.enabled !== false)
-            .slice(0, MAX_AGENTS)
+            .slice(0, agentLimit)
             .map((a) => ({
               id: a.id,
               name: a.name,
@@ -1407,25 +1497,22 @@ export default function Home() {
 
   function applyTemplate(t: ProblemTemplate) {
     setMode(t.mode);
-    setInput(composeTemplateMessage(t));
     setSheet("none");
-    setAssistantOpen(true);
-    if (t.openCanvas || t.kind === "website" || t.kind === "code") {
-      const canvasBody =
-        t.kind === "website"
-          ? `\`\`\`html\n${t.scaffold}\n\`\`\``
-          : `\`\`\`markdown\n${t.scaffold}\n\`\`\``;
-      setFocusCanvasText(canvasBody);
-      setFocusCanvasOpen(true);
-      if (t.kind === "website") {
-        setViewTab("focus");
-        // Live preview uses canvas HTML immediately (before any assistant reply)
-        setShowPreview(true);
-        setActiveCodeId(null);
-      }
-    }
-    showToast(i.templateApplied);
-    setTimeout(() => inputRef.current?.focus(), 80);
+    setInput("");
+    // Always open Focus canvas so user edits the real template (not chat send)
+    const canvasBody =
+      t.kind === "website"
+        ? canvasFromHtml(t.scaffold)
+        : t.kind === "code"
+          ? `\`\`\`markdown\n${t.scaffold}\n\`\`\``
+          : t.scaffold;
+    setFocusCanvasText(canvasBody);
+    setFocusCanvasOpen(true);
+    setViewTab("focus");
+    setAssistantOpen(false);
+    setShowPreview(false);
+    setActiveCodeId(null);
+    showToast(i.templateOpenedCanvas);
   }
 
   function updateAgent(id: string, patch: Partial<AgentRoleDef>) {
@@ -1435,13 +1522,17 @@ export default function Home() {
   }
 
   function addAgent() {
-    if (agents.length >= MAX_AGENTS) {
-      showToast(i.agentLimitReached.replace("{n}", String(MAX_AGENTS)));
+    const limit = agentLimit;
+    if (agents.length >= limit) {
+      showToast(i.agentLimitReached.replace("{n}", String(limit)));
       return;
     }
-    const slot = createAgentSlot(agents);
+    const slot = createAgentSlot(agents, {
+      max: limit,
+      availableModelIds: availableModelList.map((m) => m.id),
+    });
     if (!slot) {
-      showToast(i.agentLimitReached.replace("{n}", String(MAX_AGENTS)));
+      showToast(i.agentLimitReached.replace("{n}", String(limit)));
       return;
     }
     setAgents((prev) => [...prev, slot]);
@@ -2076,7 +2167,7 @@ export default function Home() {
                       </p>
                       <p className="text-[11px] text-[var(--on-surface-variant)] leading-snug">
                         {multiAgentEnabled
-                          ? `${agents.filter((a) => a.enabled !== false).length}/${MAX_AGENTS} · ${i.multiAgentOn}`
+                          ? `${agents.filter((a) => a.enabled !== false).length}/${agentLimit} · ${i.multiAgentOn}`
                           : i.agentTeamHint}
                       </p>
                     </div>
@@ -2094,13 +2185,13 @@ export default function Home() {
                         className="btn-ghost !h-8 !px-2.5 text-[12px]"
                         onClick={addAgent}
                         disabled={
-                          !multiAgentEnabled || agents.length >= MAX_AGENTS
+                          !multiAgentEnabled || agents.length >= agentLimit
                         }
                         title={
-                          agents.length >= MAX_AGENTS
+                          agents.length >= agentLimit
                             ? i.agentLimitReached.replace(
                                 "{n}",
-                                String(MAX_AGENTS)
+                                String(agentLimit)
                               )
                             : i.addAgent
                         }
@@ -2114,7 +2205,7 @@ export default function Home() {
 
                 {agentPanelOpen && multiAgentEnabled && (
                   <p className="agent-pipeline-hint">
-                    {i.agentPipelineHint.replace("{n}", String(MAX_AGENTS))}
+                    {i.agentPipelineHint.replace("{n}", String(agentLimit))}
                   </p>
                 )}
 
@@ -2143,6 +2234,7 @@ export default function Home() {
                             onChange={(e) =>
                               updateAgent(agent.id, { name: e.target.value })
                             }
+                            placeholder={i.agentName}
                             aria-label={i.agentName}
                           />
                           <select
@@ -2153,25 +2245,29 @@ export default function Home() {
                             }
                             aria-label={i.aiModel}
                           >
-                            {GROQ_MODELS.map((m) => (
+                            {(availableModelList.length
+                              ? availableModelList
+                              : ALL_MODELS
+                            ).map((m) => (
                               <option key={m.id} value={m.id}>
                                 {m.label}
                               </option>
                             ))}
                           </select>
                         </div>
-                        <p className="agent-role-line" title={agent.deliverable}>
-                          <span className="agent-role-badge">{agent.role}</span>
-                          <span className="agent-deliverable">
-                            {agent.deliverable}
-                          </span>
-                        </p>
+                        <input
+                          className="agent-role-input"
+                          value={agent.role}
+                          onChange={(e) =>
+                            updateAgent(agent.id, { role: e.target.value })
+                          }
+                          placeholder={i.agentRolePlaceholder}
+                          aria-label={i.agentRolePlaceholder}
+                        />
                         <textarea
                           className="agent-task-input"
                           rows={2}
-                          placeholder={
-                            agent.defaultTask || i.agentTaskPlaceholder
-                          }
+                          placeholder={i.agentTaskPlaceholder}
                           value={agent.task || ""}
                           onChange={(e) =>
                             updateAgent(agent.id, { task: e.target.value })
@@ -2463,7 +2559,7 @@ export default function Home() {
         </div>
         </div>{/* end focus-split-chat / chat column stack */}
 
-        {/* Focus technical canvas — right pane */}
+        {/* Focus canvas — code + interactive visual editor */}
         {isFocus && focusCanvasOpen && (
           <aside className="focus-canvas-panel">
             <div className="focus-canvas-head">
@@ -2473,7 +2569,7 @@ export default function Home() {
                   {i.focusCanvas}
                 </p>
                 <p className="text-[11px] text-[var(--on-surface-variant)]">
-                  {i.focusCanvasHint}
+                  {canvasIsHtml ? i.visualEditorHint : i.focusCanvasHint}
                 </p>
               </div>
               <div className="flex items-center gap-1">
@@ -2495,12 +2591,28 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <textarea
-              className="focus-canvas-editor scroll-thin"
-              value={focusCanvasText}
-              onChange={(e) => setFocusCanvasText(e.target.value)}
-              spellCheck={false}
-            />
+            {canvasIsHtml ? (
+              <div className="focus-canvas-split">
+                <VisualPreview
+                  html={htmlFromCanvas(focusCanvasText)}
+                  onHtmlChange={(html) => setFocusCanvasText(canvasFromHtml(html))}
+                  className="focus-visual"
+                />
+                <textarea
+                  className="focus-canvas-editor scroll-thin code-half"
+                  value={focusCanvasText}
+                  onChange={(e) => setFocusCanvasText(e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+            ) : (
+              <textarea
+                className="focus-canvas-editor scroll-thin"
+                value={focusCanvasText}
+                onChange={(e) => setFocusCanvasText(e.target.value)}
+                spellCheck={false}
+              />
+            )}
           </aside>
         )}
         </div>{/* end focus-split / outer flex */}
@@ -3034,183 +3146,108 @@ ${bodyHtml}
         )}
       </AnimatePresence>
 
-      {/* Templates drawer — real scaffolds + live preview */}
-      <AnimatePresence>
-        {sheet === "templates" && (
-          <motion.div
-            className="overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSheet("none")}
+      {/* Templates — light sheet, no heavy animation (perf) */}
+      {sheet === "templates" && (
+        <div className="overlay" onClick={() => setSheet("none")}>
+          <div
+            className="sheet templates-sheet templates-sheet-lite"
+            onClick={(e) => e.stopPropagation()}
           >
-            <motion.div
-              className="sheet templates-sheet"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 380, damping: 36 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="sheet-header">
-                <div>
-                  <h2 className="sheet-title">{i.templatesTitle}</h2>
-                  <p className="sheet-sub">{i.templatesSub}</p>
-                </div>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => setSheet("none")}
-                >
-                  <X className="h-4 w-4" />
-                </button>
+            <div className="sheet-header">
+              <div>
+                <h2 className="sheet-title">{i.templatesTitle}</h2>
+                <p className="sheet-sub">{i.templatesSub}</p>
               </div>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setSheet("none")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
-              <div className="border-b border-[var(--outline-variant)]/30 px-5 py-4">
-                <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--on-surface-variant)]">
-                  {i.workMode}
-                </p>
-                <div className="chip-row">
-                  {WORK_MODES.map((m) => {
-                    const Icon = MODE_ICONS[m.icon] || Sparkles;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => changeMode(m.id as WorkModeId)}
-                        className={`mode-chip ${mode === m.id ? "active" : ""}`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {m.label}
-                      </button>
-                    );
-                  })}
-                </div>
+            <div className="border-b border-[var(--outline-variant)]/25 px-5 py-3">
+              <div className="chip-row">
+                {templateCategories.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setTemplateCat(c.id)}
+                    className={`cat-chip ${templateCat === c.id ? "active" : ""}`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
               </div>
+            </div>
 
-              <div className="border-b border-[var(--outline-variant)]/30 px-5 py-3">
-                <div className="chip-row">
-                  {templateCategories.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setTemplateCat(c.id)}
-                      className={`cat-chip ${templateCat === c.id ? "active" : ""}`}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {(() => {
-                const selected =
-                  visibleTemplates.find((t) => t.id === previewTemplateId) ||
-                  visibleTemplates[0] ||
-                  null;
-                const KindIcon = selected
-                  ? TEMPLATE_KIND_ICONS[selected.kind] || FileText
-                  : FileText;
-                return (
-                  <div className="templates-layout">
-                    <div className="templates-list scroll-thin space-y-2">
-                      {visibleTemplates.map((t) => {
-                        const Icon = TEMPLATE_KIND_ICONS[t.kind] || FileText;
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => setPreviewTemplateId(t.id)}
-                            onDoubleClick={() => applyTemplate(t)}
-                            className={`template-card ${
-                              selected?.id === t.id ? "active" : ""
-                            }`}
-                          >
-                            <div className="template-card-top">
-                              <span className="template-kind-icon">
-                                <Icon className="h-3.5 w-3.5" />
-                              </span>
-                              <span className="t-cat">{t.category}</span>
-                              <span className="template-badge">{t.badge}</span>
-                            </div>
+            {(() => {
+              const selected =
+                visibleTemplates.find((t) => t.id === previewTemplateId) ||
+                visibleTemplates[0] ||
+                null;
+              return (
+                <div className="templates-layout-lite">
+                  <div className="templates-list scroll-thin">
+                    {visibleTemplates.map((t) => {
+                      const Icon = TEMPLATE_KIND_ICONS[t.kind] || FileText;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setPreviewTemplateId(t.id)}
+                          onDoubleClick={() => applyTemplate(t)}
+                          className={`template-card-lite ${
+                            selected?.id === t.id ? "active" : ""
+                          }`}
+                        >
+                          <Icon className="h-4 w-4 shrink-0 opacity-70" />
+                          <div className="min-w-0 text-left">
                             <span className="t-title block">{t.title}</span>
-                            <span className="t-desc line-clamp-2 block">
-                              {t.description}
+                            <span className="t-desc line-clamp-1 block">
+                              {t.category} · {t.badge}
                             </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="template-preview-pane">
-                      {selected ? (
-                        <>
-                          <div className="template-preview-head">
-                            <div className="flex items-start gap-3">
-                              <span className="template-kind-icon lg">
-                                <KindIcon className="h-4 w-4" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--on-surface-variant)]">
-                                  {i.templateScaffold} · {selected.badge}
-                                </p>
-                                <h3 className="mt-1 text-[15px] font-semibold text-[var(--on-surface)]">
-                                  {selected.title}
-                                </h3>
-                                <p className="mt-1 text-[12.5px] leading-snug text-[var(--on-surface-variant)]">
-                                  {selected.description}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              className="btn-primary mt-3 !h-9 !px-4 text-[13px]"
-                              onClick={() => applyTemplate(selected)}
-                            >
-                              {i.useTemplate}
-                            </button>
                           </div>
-                          <div className="template-preview-body scroll-thin">
-                            <div className="template-preview-block scaffold">
-                              <div className="template-preview-block-label">
-                                {i.templateScaffold}
-                              </div>
-                              <pre className="template-scaffold-code">
-                                {selected.scaffold.slice(0, 1400)}
-                                {selected.scaffold.length > 1400 ? "\n…" : ""}
-                              </pre>
-                            </div>
-                            <div className="template-preview-block">
-                              <div className="template-preview-block-label">
-                                {i.templateExampleInput}
-                              </div>
-                              <div className="template-preview-block-body">
-                                {selected.preview.input}
-                              </div>
-                            </div>
-                            <div className="template-preview-block">
-                              <div className="template-preview-block-label">
-                                {i.templateExampleOutput}
-                              </div>
-                              <div className="template-preview-block-body">
-                                {selected.preview.output}
-                              </div>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="template-preview-empty">
-                          {i.templatePreviewEmpty}
-                        </div>
-                      )}
-                    </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })()}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  <div className="template-detail-lite">
+                    {selected ? (
+                      <>
+                        <h3 className="text-[16px] font-semibold tracking-tight">
+                          {selected.title}
+                        </h3>
+                        <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--on-surface-variant)]">
+                          {selected.description}
+                        </p>
+                        <p className="mt-3 text-[12px] text-[var(--on-surface-variant)]">
+                          {selected.preview.input}
+                        </p>
+                        <button
+                          type="button"
+                          className="btn-primary mt-5 !h-10 !px-5 text-[13px]"
+                          onClick={() => applyTemplate(selected)}
+                        >
+                          {i.useTemplate}
+                        </button>
+                        <p className="mt-2 text-[11px] text-[var(--on-surface-variant)]">
+                          {i.templateOpensCanvas}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[13px] text-[var(--on-surface-variant)]">
+                        {i.templatePreviewEmpty}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Global file drop overlay */}
       <AnimatePresence>
@@ -3265,20 +3302,23 @@ ${bodyHtml}
               <div className="sheet-body">
                 <div className="settings-card">
                   <div className="model-unified">
-                    {GROQ_MODELS.map((m, idx) => (
+                    {(availableModelList.length
+                      ? availableModelList
+                      : []
+                    ).map((m, idx, arr) => (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => changeModel(m.id)}
                         className={`model-unified-row ${model === m.id ? "active" : ""} ${
                           idx === 0 ? "first" : ""
-                        } ${idx === GROQ_MODELS.length - 1 ? "last" : ""}`}
+                        } ${idx === arr.length - 1 ? "last" : ""}`}
                       >
                         <div className="min-w-0 flex-1 text-left">
                           <div className="flex items-center gap-2">
                             <p className="text-[14px] font-semibold">{m.label}</p>
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--on-surface-variant)]">
-                              {m.tier}
+                              {m.provider}
                             </span>
                           </div>
                           <p className="mt-0.5 text-[12px] text-[var(--on-surface-variant)]">
@@ -3291,6 +3331,11 @@ ${bodyHtml}
                         />
                       </button>
                     ))}
+                    {!availableModelList.length && (
+                      <p className="px-4 py-6 text-center text-[13px] text-[var(--on-surface-variant)]">
+                        {i.modelNeedsKey}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -3679,23 +3724,45 @@ ${bodyHtml}
                         />
                       </div>
                       <div>
-                        <label className="label">
-                          {i.groqApiKey}{" "}
-                          {user.hasApiKey && (
-                            <span className="text-[var(--on-tertiary-container)]">
-                              {i.connected}
-                            </span>
-                          )}
-                        </label>
-                        <input
-                          className="field font-mono text-[13px]"
-                          type="password"
-                          value={apiKeyDraft}
-                          onChange={(e) => setApiKeyDraft(e.target.value)}
-                          placeholder={
-                            user.hasApiKey ? i.replaceKey : "gsk_…"
-                          }
-                        />
+                        <p className="label mb-1">{i.universalApiKeys}</p>
+                        <p className="mb-3 text-[12px] text-[var(--on-surface-variant)]">
+                          {i.universalApiKeysHint}
+                        </p>
+                        <div className="space-y-3">
+                          {PROVIDERS.map((p) => {
+                            const connected = Boolean(user.providers?.[p.id]);
+                            return (
+                              <div key={p.id}>
+                                <label className="label flex items-center gap-2">
+                                  {p.label}
+                                  {connected && (
+                                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--on-tertiary-container)]">
+                                      {i.connected}
+                                    </span>
+                                  )}
+                                </label>
+                                <input
+                                  className="field font-mono text-[13px]"
+                                  type="password"
+                                  value={apiKeyDrafts[p.id]}
+                                  onChange={(e) =>
+                                    setApiKeyDrafts((prev) => ({
+                                      ...prev,
+                                      [p.id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder={
+                                    connected ? i.replaceKey : p.placeholder
+                                  }
+                                  autoComplete="off"
+                                />
+                                <p className="mt-1 text-[11px] text-[var(--on-surface-variant)]">
+                                  {p.hint}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                       <p className="text-[12px] text-[var(--on-surface-variant)]">
                         {i.accountHint}
@@ -3715,7 +3782,9 @@ ${bodyHtml}
                   {settingsTab === "model" && (
                     <div className="space-y-4">
                       <p className="text-[11.5px] text-[var(--on-surface-variant)]">
-                        {i.modelUnifiedHint}
+                        {availableModelList.length
+                          ? i.modelUnifiedHint
+                          : i.modelNeedsKey}
                       </p>
 
                       <div className="settings-card">
@@ -3723,20 +3792,23 @@ ${bodyHtml}
                           <p className="settings-card-title">{i.defaultModel}</p>
                         </div>
                         <div className="model-unified">
-                          {GROQ_MODELS.map((m, idx) => (
+                          {(availableModelList.length
+                            ? availableModelList
+                            : []
+                          ).map((m, idx, arr) => (
                             <button
                               key={m.id}
                               type="button"
                               onClick={() => setModel(m.id)}
                               className={`model-unified-row ${model === m.id ? "active" : ""} ${
                                 idx === 0 ? "first" : ""
-                              } ${idx === GROQ_MODELS.length - 1 ? "last" : ""}`}
+                              } ${idx === arr.length - 1 ? "last" : ""}`}
                             >
                               <div className="min-w-0 flex-1 text-left">
                                 <div className="flex items-center gap-2">
                                   <p className="text-[13px] font-semibold">{m.label}</p>
                                   <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--on-surface-variant)]">
-                                    {m.tier}
+                                    {m.provider}
                                   </span>
                                 </div>
                                 <p className="mt-0.5 text-[11.5px] text-[var(--on-surface-variant)]">
@@ -3749,6 +3821,11 @@ ${bodyHtml}
                               />
                             </button>
                           ))}
+                          {!availableModelList.length && (
+                            <p className="px-4 py-6 text-center text-[13px] text-[var(--on-surface-variant)]">
+                              {i.modelNeedsKey}
+                            </p>
+                          )}
                         </div>
                       </div>
 
